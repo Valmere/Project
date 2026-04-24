@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #333; background: white; }
+  .page { padding: 30px 36px; max-width: 800px; margin: 0 auto; }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1A3A5C; padding-bottom: 16px; margin-bottom: 20px; }
+  .company-name { font-size: 20px; font-weight: bold; color: #1A3A5C; }
+  .company-sub { font-size: 11px; color: #888; margin-top: 3px; }
+  .report-meta { text-align: right; }
+  .report-meta .label { font-size: 9px; text-transform: uppercase; color: #aaa; letter-spacing: 0.5px; }
+  .report-meta .value { font-size: 12px; font-weight: bold; color: #1A3A5C; margin-top: 2px; }
+
+  /* Investor card */
+  .investor-card { background: #f0f4f8; border-left: 4px solid #C9A84C; padding: 12px 16px; border-radius: 4px; margin-bottom: 20px; }
+  .investor-name { font-size: 15px; font-weight: bold; color: #1A3A5C; }
+  .investor-meta { font-size: 10px; color: #666; margin-top: 4px; }
+  .investor-meta span { margin-right: 16px; }
+
+  /* Summary boxes */
+  .summary-grid { display: flex; gap: 12px; margin-bottom: 20px; }
+  .summary-box { flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; background: white; }
+  .summary-box .box-label { font-size: 9px; text-transform: uppercase; color: #999; letter-spacing: 0.5px; }
+  .summary-box .box-value { font-size: 16px; font-weight: bold; color: #1A3A5C; margin-top: 4px; }
+  .summary-box .box-value.positive { color: #16a34a; }
+  .summary-box .box-value.negative { color: #dc2626; }
+
+  /* Section titles */
+  .section-title { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.8px; color: white; background: #1A3A5C; padding: 7px 12px; border-radius: 4px; margin-bottom: 10px; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10px; }
+  th { background: #C9A84C; color: white; font-weight: bold; padding: 7px 10px; text-align: left; }
+  td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+  .mono { font-family: monospace; }
+
+  /* Type badges */
+  .badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
+  .badge-deposit { background: #dcfce7; color: #15803d; }
+  .badge-withdrawal { background: #fee2e2; color: #b91c1c; }
+  .badge-gain { background: #d1fae5; color: #065f46; }
+  .badge-loss { background: #fef2f2; color: #991b1b; }
+  .badge-fee { background: #f3f4f6; color: #4b5563; }
+
+  /* Performance table */
+  .perf-positive { color: #16a34a; font-weight: bold; }
+  .perf-negative { color: #dc2626; font-weight: bold; }
+
+  /* Footer */
+  .footer { margin-top: 30px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 9px; color: #aaa; }
+
+  /* Page break */
+  @page { margin: 20px; size: A4; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="company-name">Valmere &amp; Co</div>
+      <div class="company-sub">Portail de Gestion d'Investissement</div>
+    </div>
+    <div class="report-meta">
+      <div class="label">Relevé généré le</div>
+      <div class="value">{{ generated_date }}</div>
+      {% if period_start %}
+      <div class="label" style="margin-top:6px">Période</div>
+      <div class="value" style="font-size:10px">{{ period_start }} → {{ period_end }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Investor card -->
+  <div class="investor-card">
+    <div class="investor-name">{{ investor.full_name }}</div>
+    <div class="investor-meta">
+      <span>Code : {{ investor.code }}</span>
+      <span>Entrée : {{ investor.entry_date }}</span>
+      <span>Statut : {{ investor.status | upper }}</span>
+      {% if investor.email %}<span>{{ investor.email }}</span>{% endif %}
+    </div>
+  </div>
+
+  <!-- Summary boxes -->
+  <div class="summary-grid">
+    <div class="summary-box">
+      <div class="box-label">Capital initial</div>
+      <div class="box-value">{{ "{:,.2f}".format(investment.initial_capital | float) }} HTG</div>
+    </div>
+    <div class="summary-box">
+      <div class="box-label">Valeur actuelle</div>
+      <div class="box-value">{{ "{:,.2f}".format(investment.current_value | float) }} HTG</div>
+    </div>
+    <div class="summary-box">
+      <div class="box-label">ROI</div>
+      {% set roi = ((investment.current_value | float) - (investment.initial_capital | float)) / (investment.initial_capital | float) * 100 if investment.initial_capital else 0 %}
+      <div class="box-value {% if roi >= 0 %}positive{% else %}negative{% endif %}">
+        {{ "{:+.2f}".format(roi) }}%
+      </div>
+    </div>
+    <div class="summary-box">
+      <div class="box-label">Gain / Perte</div>
+      {% set pnl = (investment.current_value | float) - (investment.initial_capital | float) %}
+      <div class="box-value {% if pnl >= 0 %}positive{% else %}negative{% endif %}">
+        {{ "{:+,.2f}".format(pnl) }} HTG
+      </div>
+    </div>
+  </div>
+
+  <!-- Transactions -->
+  {% if transactions %}
+  <div class="section-title">Historique des transactions</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Type</th>
+        <th class="text-right">Montant (HTG)</th>
+        <th>Description</th>
+        <th>Référence</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tx in transactions %}
+      <tr>
+        <td class="mono">{{ tx.transaction_date }}</td>
+        <td><span class="badge badge-{{ tx.type }}">{{ tx.type }}</span></td>
+        <td class="text-right mono">{{ "{:,.2f}".format(tx.amount | float) }}</td>
+        <td>{{ tx.description or "—" }}</td>
+        <td class="mono">{{ tx.reference or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- Performances -->
+  {% if performances %}
+  <div class="section-title">Performances par période</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Période</th>
+        <th>Début</th>
+        <th>Fin</th>
+        <th class="text-right">ROI (%)</th>
+        <th class="text-right">P&amp;L (HTG)</th>
+        <th class="text-right">Drawdown max (%)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in performances %}
+      <tr>
+        <td>{{ p.period_type | upper }}</td>
+        <td class="mono">{{ p.period_start or "—" }}</td>
+        <td class="mono">{{ p.period_end or "—" }}</td>
+        <td class="text-right {% if p.roi_percent and p.roi_percent >= 0 %}perf-positive{% elif p.roi_percent %}perf-negative{% endif %}">
+          {{ "{:+.2f}".format(p.roi_percent | float) if p.roi_percent else "—" }}
+        </td>
+        <td class="text-right {% if p.net_profit_loss and p.net_profit_loss >= 0 %}perf-positive{% elif p.net_profit_loss %}perf-negative{% endif %}">
+          {{ "{:+,.2f}".format(p.net_profit_loss | float) if p.net_profit_loss else "—" }}
+        </td>
+        <td class="text-right">{{ "{:.2f}".format(p.max_drawdown | float) if p.max_drawdown else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- Footer -->
+  <div class="footer">
+    <div>Document généré automatiquement par Valmere &amp; Co — usage confidentiel</div>
+    <div>{{ generated_date }}</div>
+  </div>
+
+</div>
+</body>
+</html>
