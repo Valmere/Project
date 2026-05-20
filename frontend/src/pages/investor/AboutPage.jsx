@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getAbout } from '../../api/about.api'
 import { useBrandStore } from '../../store/brand.store'
+import { usePrefsStore, useT } from '../../store/prefs.store'
 
 /* ── Professional line icons ─────────────────────────────────── */
 const Icons = {
@@ -45,30 +46,35 @@ const Icons = {
   ),
 }
 
+// Les libellés des sections viennent désormais de l'i18n. On utilise des
+// `labelKey` au lieu de chaînes en dur pour suivre la langue du topbar.
 const SECTIONS = [
-  { key: 'mission', label: 'Notre mission' },
-  { key: 'vision', label: 'Notre vision' },
-  { key: 'history', label: 'Notre histoire' },
-  { key: 'services', label: 'Nos services' },
-  { key: 'team', label: "L'équipe" },
-  { key: 'contact_info', label: 'Contact', iconKey: 'contact' },
+  { key: 'mission', labelKey: 'about.section.mission' },
+  { key: 'vision', labelKey: 'about.section.vision' },
+  { key: 'history', labelKey: 'about.section.history' },
+  { key: 'services', labelKey: 'about.section.services' },
+  { key: 'team', labelKey: 'about.section.team' },
+  { key: 'contact_info', labelKey: 'about.section.contact_info', iconKey: 'contact' },
 ]
 
 export default function InvestorAboutPage() {
+  const t = useT()
+  const { lang } = usePrefsStore()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const { company } = useBrandStore()
 
   useEffect(() => {
+    setLoading(true)
     getAbout()
       .then(setData)
-      .catch(e => setErr(e?.response?.data?.detail || 'Impossible de charger la page À propos'))
+      .catch(e => setErr(e?.response?.data?.detail || t('about.error_load')))
       .finally(() => setLoading(false))
-  }, [])
+  }, [lang])
 
   if (loading) {
-    return <div className="p-8 text-sm text-slate-500">Chargement…</div>
+    return <div className="p-8 text-sm text-slate-500">{t('common.loading')}</div>
   }
 
   if (err) {
@@ -89,9 +95,9 @@ export default function InvestorAboutPage() {
         style={{ background: 'var(--color-primary)' }}
       >
         <div className="relative">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] opacity-70 mb-2">À propos</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] opacity-70 mb-2">{t('about.title')}</div>
           <h1 className="text-2xl md:text-3xl font-bold mb-2">
-            {company?.company_name || 'Notre entreprise'}
+            {company?.company_name || t('about.default_company_name')}
           </h1>
           {company?.company_type && (
             <p className="text-sm md:text-base opacity-80">{company.company_type}</p>
@@ -101,7 +107,7 @@ export default function InvestorAboutPage() {
 
       {!hasContent && (
         <div className="bg-white rounded-xl shadow-sm p-8 text-center text-sm text-slate-400">
-          Aucune information n'a encore été renseignée. Revenez bientôt !
+          {t('about.empty')}
         </div>
       )}
 
@@ -119,7 +125,7 @@ export default function InvestorAboutPage() {
                 >
                   {icon}
                 </div>
-                <h3 className="font-semibold text-slate-800 text-base">{section.label}</h3>
+                <h3 className="font-semibold text-slate-800 text-base">{t(section.labelKey)}</h3>
               </div>
               <p className="text-sm md:text-[15px] text-slate-700 whitespace-pre-wrap leading-relaxed pl-12">
                 {value}

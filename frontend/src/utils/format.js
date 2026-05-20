@@ -43,7 +43,20 @@ export function formatPercent(value, lang = 'fr', decimals = 1) {
 
 export function formatDate(value, lang = 'fr', opts = { day: 'numeric', month: 'short', year: 'numeric' }) {
   if (!value) return ''
-  const d = value instanceof Date ? value : new Date(value)
+  // Bug à éviter : `new Date("2026-04-28")` est parsé comme MINUIT UTC.
+  // Pour un client à UTC-4 (Haïti), ça devient « 27 avril 20:00 local » et
+  // l'affichage tronque à « 27 Apr » alors que la transaction a été enregistrée
+  // pour le 28. Quand on reçoit une chaîne ISO date-seule (YYYY-MM-DD) on la
+  // parse explicitement comme MINUIT LOCAL pour préserver le jour saisi.
+  let d
+  if (value instanceof Date) {
+    d = value
+  } else if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, day] = value.split('-').map(Number)
+    d = new Date(y, m - 1, day)  // local midnight, no timezone shift
+  } else {
+    d = new Date(value)
+  }
   return new Intl.DateTimeFormat(getLocale(lang), opts).format(d)
 }
 
@@ -54,4 +67,18 @@ export function formatLongDate(lang = 'fr') {
     month: 'long',
     year: 'numeric',
   }).format(new Date())
+}
+
+/**
+ * Date du jour au format YYYY-MM-DD selon le fuseau LOCAL de l'utilisateur.
+ * Évite le piège de `new Date().toISOString().slice(0,10)` qui renvoie la
+ * date UTC — pour un utilisateur à UTC+12 par exemple, ça peut décaler d'un
+ * jour quand il est tôt le matin local (UTC est encore la veille).
+ */
+export function todayLocalISO() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }

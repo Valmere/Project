@@ -8,6 +8,15 @@ from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.utils.units import pixels_to_EMU
 
 from app.services.currency import convert_amount
+from app.services.roi_calculator import compute_roi_from_pnl
+from app.services.portfolio_math import (
+    TX_SIGNS,
+    is_effective_pnl_tx,
+    is_initial_capital_tx,
+    latest_bailout_key_by_investment,
+    transaction_business_amount_and_currency,
+    tx_sort_key,
+)
 
 
 # ── Palette ─────────────────────────────────────────────────────────────────
@@ -41,7 +50,7 @@ I18N = {
         "investor": "Investisseur",
         "code": "Code",
         "summary": "Résumé du portefeuille",
-        "initial": "Capital initial",
+        "initial": "Capital investi",
         "current": "Valeur actuelle",
         "pnl": "Gain / Perte",
         "roi": "Rendement (ROI)",
@@ -72,7 +81,7 @@ I18N = {
         "investor": "Investor",
         "code": "Code",
         "summary": "Portfolio summary",
-        "initial": "Initial capital",
+        "initial": "Invested capital",
         "current": "Current value",
         "pnl": "Gain / Loss",
         "roi": "Return (ROI)",
@@ -103,7 +112,7 @@ I18N = {
         "investor": "Inversor",
         "code": "Código",
         "summary": "Resumen de la cartera",
-        "initial": "Capital inicial",
+        "initial": "Capital invertido",
         "current": "Valor actual",
         "pnl": "Ganancia / Pérdida",
         "roi": "Rendimiento (ROI)",
@@ -299,31 +308,46 @@ def generate_statement(
 
     # Les exports Excel tolèrent l'absence de taux : on affiche la valeur brute
     # plutôt que de faire planter tout le rapport (strict=False).
-    initial = convert_amount(db, float(investment.initial_capital or 0), inv_ccy, display_ccy, strict=False) if db else float(investment.initial_capital or 0)
-    current = convert_amount(db, float(investment.current_value or 0), inv_ccy, display_ccy, strict=False) if db else float(investment.current_value or 0)
+    initial_native = float(investment.initial_capital or 0)
+    initial = convert_amount(db, initial_native, inv_ccy, display_ccy, strict=False) if db else initial_native
 
     # Bénéfice réalisé = Σ gains − Σ (pertes + frais), apports exclus.
+    # Capital investi = Σ dépôts − Σ retraits (apport initial inclus dès lors
+    # qu'il a été tracé comme transaction "Capital initial" — fallback sur
+    # initial pour les données legacy).
     pnl = 0.0
     net_deposits = 0.0
+    latest_bailouts = latest_bailout_key_by_investment(transactions)
     for tx in transactions:
-        tx_ccy = (getattr(tx, "currency", None) or "HTG").upper()
-        amt = convert_amount(db, float(tx.amount or 0), tx_ccy, display_ccy, strict=False) if db else float(tx.amount or 0)
-        if tx.type == "gain":
-            pnl += amt
-        elif tx.type in ("loss", "fee"):
-            pnl -= amt
-        elif tx.type == "deposit":
+        native_amt, tx_ccy = transaction_business_amount_and_currency(tx)
+        amt = convert_amount(db, native_amt, tx_ccy, display_ccy, strict=False) if db else native_amt
+        if is_effective_pnl_tx(tx, latest_bailouts):
+            pnl += amt if tx.type == "gain" else -amt
+        elif tx.type in ("deposit", "bailout", "company_bailout"):
             net_deposits += amt
-        elif tx.type == "withdrawal":
+        elif tx.type in ("withdrawal", "company_withdrawal"):
             net_deposits -= amt
-    roi = (pnl / initial * 100) if initial else 0
+    has_initial_tx = any(is_initial_capital_tx(tx) for tx in transactions)
+    invested_seed = 0.0 if has_initial_tx else initial
+    invested = invested_seed + net_deposits
+    current = invested_seed
+    for tx in sorted(transactions, key=tx_sort_key):
+        native_amt, tx_ccy = transaction_business_amount_and_currency(tx)
+        amt = convert_amount(db, native_amt, tx_ccy, display_ccy, strict=False) if db else native_amt
+        if (tx.type or "").lower() == "bailout":
+            current = amt
+        else:
+            current += TX_SIGNS.get((tx.type or "").lower(), 0) * amt
+    # ROI = bénéfice / valeur actuelle (cohérent avec le dashboard et le relevé).
+    roi = compute_roi_from_pnl(pnl, current)
+    roi_display = f"{roi:+.2f}%" if roi is not None else "N/A"
 
     # 3 colonnes pour un rendu plus moderne : label (A-B) · valeur (C-D) · label (E) · valeur (F)
     summary_rows = [
-        (_t(lang, "initial"),     f"{initial:,.2f} {display_ccy}",  _t(lang, "entry_date"), str(investor.entry_date)),
+        (_t(lang, "initial"),     f"{invested:,.2f} {display_ccy}", _t(lang, "entry_date"), str(investor.entry_date)),
         (_t(lang, "current"),     f"{current:,.2f} {display_ccy}",  _t(lang, "status"),     (investor.status or "").upper()),
         (_t(lang, "pnl"),         f"{pnl:+,.2f} {display_ccy}",     "",                     ""),
-        (_t(lang, "roi"),         f"{roi:+.2f}%",                   "",                     ""),
+        (_t(lang, "roi"),         roi_display,                      "",                     ""),
     ]
     for i, (l1, v1, l2, v2) in enumerate(summary_rows):
         r = row + 1 + i
@@ -336,7 +360,8 @@ def generate_statement(
         a.alignment = Alignment(horizontal="left", vertical="center")
         ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=4)
         b = ws.cell(row=r, column=3, value=v1)
-        b.font = Font(bold=True, color=TEXT_DARK, size=11)
+        b_color = "B91C1C" if i == 3 and roi is None else TEXT_DARK
+        b.font = Font(bold=True, color=b_color, size=11)
         b.alignment = Alignment(horizontal="left", vertical="center", indent=1)
         # droite
         c = ws.cell(row=r, column=5, value=l2)
@@ -391,13 +416,22 @@ def generate_statement(
         "description": _t(lang, "initial_deposit_desc"),
     }
 
-    tx_rows = [synthetic_initial] + [
+    tx_rows = ([] if has_initial_tx else [synthetic_initial]) + [
         {
             "date": str(tx.transaction_date),
             "type": (tx.type or "").lower(),
-            "converted": (convert_amount(db, float(tx.amount or 0), (getattr(tx, "currency", None) or "HTG").upper(), display_ccy, strict=False) if db else float(tx.amount or 0)),
-            "original": float(tx.amount or 0),
-            "orig_ccy": (getattr(tx, "currency", None) or "HTG").upper(),
+            "converted": (
+                convert_amount(
+                    db,
+                    transaction_business_amount_and_currency(tx)[0],
+                    transaction_business_amount_and_currency(tx)[1],
+                    display_ccy,
+                    strict=False,
+                )
+                if db else transaction_business_amount_and_currency(tx)[0]
+            ),
+            "original": transaction_business_amount_and_currency(tx)[0],
+            "orig_ccy": transaction_business_amount_and_currency(tx)[1],
             "description": tx.description or _t(lang, "na"),
         }
         for tx in transactions
@@ -497,11 +531,13 @@ def generate_statement(
             pr = ph + 1 + i
             bg = LIGHTER if i % 2 == 0 else WHITE
             _paint_row(ws, pr, 1, 6, bg)
+            perf_roi_raw = getattr(p, "roi_pct", None)
+            perf_roi = float(perf_roi_raw) if perf_roi_raw is not None else None
             vals = [
                 p.period_type,
                 str(p.period_start) if p.period_start else _t(lang, "na"),
                 str(p.period_end) if p.period_end else _t(lang, "na"),
-                float(p.roi_pct) if getattr(p, "roi_pct", None) else 0.0,
+                perf_roi if perf_roi is not None else "N/A",
                 float(p.gross_gain) if getattr(p, "gross_gain", None) else 0.0,
                 float(p.max_drawdown_pct) if getattr(p, "max_drawdown_pct", None) else 0.0,
             ]
@@ -509,7 +545,10 @@ def generate_statement(
                 c = ws.cell(row=pr, column=col, value=val)
                 c.font = Font(color=TEXT_DARK, size=10)
                 c.border = Border(bottom=Side(style="thin", color=BORDER))
-                if col in (4, 5, 6):
+                if col == 4 and perf_roi is None:
+                    c.font = Font(bold=True, color="B91C1C", size=10)
+                    c.alignment = Alignment(horizontal="right", vertical="center")
+                elif col in (4, 5, 6):
                     c.number_format = '#,##0.00'
                     c.alignment = Alignment(horizontal="right", vertical="center")
                 else:

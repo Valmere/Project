@@ -11,7 +11,7 @@ from app.models.user import User
 from app.models.transaction import Transaction
 from app.models.investment import Investment
 from app.models.journal_entry import JournalLine
-from app.dependencies.auth import get_current_user, admin_or_analyst, admin_only
+from app.dependencies.auth import get_current_user, admin_or_cashier, admin_only
 from app.services.brh_rates import fetch_brh_rates
 
 router = APIRouter(prefix="/api/currency-rates", tags=["currency-rates"])
@@ -38,7 +38,7 @@ def list_rates(
 @router.post("", status_code=201)
 def create_rate(
     body: RateCreate,
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
     db: Session = Depends(get_db),
 ):
     fc = body.from_currency.upper()
@@ -75,7 +75,7 @@ def create_rate(
 def update_rate(
     rate_id: uuid.UUID,
     body: RateUpdate,
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
     db: Session = Depends(get_db),
 ):
     r = db.query(CurrencyRate).filter(CurrencyRate.id == rate_id).first()
@@ -110,7 +110,7 @@ def _upsert(db: Session, fc: str, tc: str, rate: float, user_id):
 
 @router.post("/sync-brh")
 def sync_brh(
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
     db: Session = Depends(get_db),
 ):
     """
@@ -234,7 +234,7 @@ def normalize_currency(
 @router.delete("/{rate_id}", status_code=204)
 def delete_rate(
     rate_id: uuid.UUID,
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
     db: Session = Depends(get_db),
 ):
     r = db.query(CurrencyRate).filter(CurrencyRate.id == rate_id).first()

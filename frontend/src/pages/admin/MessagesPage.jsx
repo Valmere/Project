@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getMessages, replyMessage, markRead, broadcastMessage } from '../../api/messages.api'
 import { getInvestors } from '../../api/investors.api'
+import { usePrefsStore, useT } from '../../store/prefs.store'
+import { formatDate } from '../../utils/format'
 
-const fmtDateTime = (iso) => {
+const fmtDateTime = (iso, lang) => {
   if (!iso) return '—'
   try {
-    return new Date(iso).toLocaleString('fr-FR', {
+    return formatDate(iso, lang, {
       day: '2-digit', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     })
@@ -28,8 +30,8 @@ function Avatar({ name, role }) {
   )
 }
 
-function MessageListItem({ msg, selected, onClick }) {
-  const investor = msg.investor?.full_name || 'Investisseur'
+function MessageListItem({ msg, selected, onClick, t, lang }) {
+  const investor = msg.investor?.full_name || t('role.investor')
   const preview = msg.body?.slice(0, 60) + (msg.body?.length > 60 ? '…' : '')
   const isOut = msg.direction === 'out'
   return (
@@ -44,7 +46,9 @@ function MessageListItem({ msg, selected, onClick }) {
             <span className="text-sm font-semibold text-slate-800 truncate">{investor}</span>
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {isOut && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium">ENVOYÉ</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium">
+                  {t('messages.sent_badge').toUpperCase()}
+                </span>
               )}
               {!msg.read_at && !isOut && (
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--color-primary)' }} />
@@ -53,23 +57,23 @@ function MessageListItem({ msg, selected, onClick }) {
           </div>
           <div className="text-xs text-slate-600 truncate font-medium">{msg.subject}</div>
           <div className="text-[11px] text-slate-400 truncate">{preview}</div>
-          <div className="text-[10px] text-slate-400 mt-1">{fmtDateTime(msg.sent_at)}</div>
+          <div className="text-[10px] text-slate-400 mt-1">{fmtDateTime(msg.sent_at, lang)}</div>
         </div>
       </div>
     </button>
   )
 }
 
-function MessageBubble({ author, email, role, at, children, color }) {
+function MessageBubble({ author, email, role, roleLabel, at, children, color, lang }) {
   return (
     <div className="mb-4">
       <div className="flex items-center gap-2 mb-1.5">
-        <Avatar name={author} role={role === 'Admin' ? 'admin' : 'investor'} />
+        <Avatar name={author} role={role} />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-slate-800 truncate">
-            {author} <span className="text-[11px] font-normal text-slate-400">· {role}</span>
+            {author} <span className="text-[11px] font-normal text-slate-400">· {roleLabel}</span>
           </div>
-          <div className="text-[11px] text-slate-400 truncate">{email || '—'} · {fmtDateTime(at)}</div>
+          <div className="text-[11px] text-slate-400 truncate">{email || '—'} · {fmtDateTime(at, lang)}</div>
         </div>
       </div>
       <div
@@ -82,17 +86,17 @@ function MessageBubble({ author, email, role, at, children, color }) {
   )
 }
 
-function ConversationView({ msg, reply, setReply, onReply, busy }) {
+function ConversationView({ msg, reply, setReply, onReply, busy, t, lang }) {
   const isOut = msg.direction === 'out'
   // Premier message : auteur varie selon direction
   const firstAuthor = isOut
-    ? { name: msg.sender?.full_name || 'Admin', email: msg.sender?.email, role: 'Admin' }
-    : { name: msg.investor?.full_name || 'Investisseur', email: msg.investor?.email, role: 'Investisseur' }
+    ? { name: msg.sender?.full_name || t('role.admin'), email: msg.sender?.email, role: 'admin', roleLabel: t('role.admin') }
+    : { name: msg.investor?.full_name || t('role.investor'), email: msg.investor?.email, role: 'investor', roleLabel: t('role.investor') }
 
   // Réponse (le cas échéant) vient de l'autre partie
   const replyAuthor = isOut
-    ? { name: msg.replied_by_user?.full_name || msg.investor?.full_name || 'Investisseur', email: msg.replied_by_user?.email || msg.investor?.email, role: 'Investisseur' }
-    : { name: msg.replied_by_user?.full_name || 'Admin', email: msg.replied_by_user?.email, role: 'Admin' }
+    ? { name: msg.replied_by_user?.full_name || msg.investor?.full_name || t('role.investor'), email: msg.replied_by_user?.email || msg.investor?.email, role: 'investor', roleLabel: t('role.investor') }
+    : { name: msg.replied_by_user?.full_name || t('role.admin'), email: msg.replied_by_user?.email, role: 'admin', roleLabel: t('role.admin') }
 
   // L'admin ne peut répondre que aux messages entrants (direction='in') non déjà répondus
   const canReply = !isOut && !msg.reply_body
@@ -103,7 +107,7 @@ function ConversationView({ msg, reply, setReply, onReply, busy }) {
         <div className="flex items-center gap-2 mb-1">
           <h3 className="font-semibold text-slate-800">{msg.subject}</h3>
           <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${isOut ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
-            {isOut ? 'ENVOYÉ À' : 'REÇU DE'}
+            {isOut ? t('messages.sent_to').toUpperCase() : t('messages.received_from').toUpperCase()}
           </span>
         </div>
         <div className="text-xs text-slate-500">
@@ -118,8 +122,10 @@ function ConversationView({ msg, reply, setReply, onReply, busy }) {
           author={firstAuthor.name}
           email={firstAuthor.email}
           role={firstAuthor.role}
+          roleLabel={firstAuthor.roleLabel}
           at={msg.sent_at}
           color={isOut ? 'primary' : 'slate'}
+          lang={lang}
         >
           {msg.body}
         </MessageBubble>
@@ -129,8 +135,10 @@ function ConversationView({ msg, reply, setReply, onReply, busy }) {
             author={replyAuthor.name}
             email={replyAuthor.email}
             role={replyAuthor.role}
+            roleLabel={replyAuthor.roleLabel}
             at={msg.replied_at}
             color={isOut ? 'slate' : 'primary'}
+            lang={lang}
           >
             {msg.reply_body}
           </MessageBubble>
@@ -138,7 +146,7 @@ function ConversationView({ msg, reply, setReply, onReply, busy }) {
 
         {isOut && !msg.reply_body && (
           <div className="ml-11 mt-3 text-[11px] text-slate-400 italic">
-            En attente de réponse de l'investisseur…
+            {t('messages.waiting_reply')}
           </div>
         )}
       </div>
@@ -150,7 +158,7 @@ function ConversationView({ msg, reply, setReply, onReply, busy }) {
               value={reply}
               onChange={e => setReply(e.target.value)}
               rows={2}
-              placeholder={`Répondre à ${msg.investor?.full_name || 'l\'investisseur'}…`}
+              placeholder={t('messages.reply_placeholder', { name: msg.investor?.full_name || t('role.investor') })}
               className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
             <button
@@ -159,7 +167,7 @@ function ConversationView({ msg, reply, setReply, onReply, busy }) {
               className="px-4 rounded-lg text-white text-sm font-medium self-stretch disabled:opacity-60"
               style={{ backgroundColor: 'var(--color-primary)' }}
             >
-              {busy ? '…' : 'Envoyer'}
+              {busy ? '...' : t('messages.send')}
             </button>
           </div>
         </div>
@@ -169,6 +177,7 @@ function ConversationView({ msg, reply, setReply, onReply, busy }) {
 }
 
 function ComposeModal({ onClose, onSent }) {
+  const t = useT()
   const [investors, setInvestors] = useState([])
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [toAll, setToAll] = useState(false)
@@ -193,11 +202,11 @@ function ComposeModal({ onClose, onSent }) {
     e.preventDefault()
     setError('')
     if (!subject.trim() || !body.trim()) {
-      setError('Sujet et message requis')
+      setError(t('messages.error_required'))
       return
     }
     if (!toAll && selectedIds.size === 0) {
-      setError('Sélectionnez au moins un destinataire ou cochez « Tous les investisseurs »')
+      setError(t('messages.error_recipient'))
       return
     }
     setBusy(true)
@@ -212,7 +221,7 @@ function ComposeModal({ onClose, onSent }) {
       onClose()
     } catch (err) {
       const detail = err.response?.data?.detail
-      setError(typeof detail === 'string' ? detail : `Erreur ${err.response?.status || ''}`)
+      setError(typeof detail === 'string' ? detail : `${t('common.error')} ${err.response?.status || ''}`)
     } finally {
       setBusy(false)
     }
@@ -220,25 +229,25 @@ function ComposeModal({ onClose, onSent }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-mobile-sheet-overlay"
       style={{ background: 'rgba(15, 23, 42, 0.55)' }}
       onClick={() => !busy && onClose()}
     >
       <form
         onSubmit={submit}
         onClick={e => e.stopPropagation()}
-        className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 flex flex-col max-h-[90vh]"
+        className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-4 sm:p-6 flex flex-col max-h-[90vh] modal-mobile-sheet-panel"
       >
-        <h3 className="text-lg font-semibold text-slate-800 mb-1">Nouveau message</h3>
+        <h3 className="text-lg font-semibold text-slate-800 mb-1">{t('messages.compose_title')}</h3>
         <p className="text-xs text-slate-500 mb-4">
-          Envoyer à un ou plusieurs investisseurs. Ils recevront le message dans leur messagerie.
+          {t('messages.compose_desc')}
         </p>
 
         {error && (
           <div className="mb-3 px-3 py-2 rounded-lg text-sm bg-red-50 text-red-700">{error}</div>
         )}
 
-        <label className="block text-xs text-slate-500 mb-1">Destinataires *</label>
+        <label className="block text-xs text-slate-500 mb-1">{t('messages.recipients')}</label>
         <div className="border border-slate-200 rounded-lg mb-4 max-h-52 overflow-auto">
           <label className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 bg-slate-50 cursor-pointer">
             <input
@@ -248,11 +257,11 @@ function ComposeModal({ onClose, onSent }) {
               className="accent-[var(--color-primary)]"
             />
             <span className="text-sm font-medium text-slate-700">
-              Tous les investisseurs actifs ({investors.filter(i => i.status === 'active').length})
+              {t('messages.all_active_investors', { count: investors.filter(i => i.status === 'active').length })}
             </span>
           </label>
           <div className={toAll ? 'opacity-40 pointer-events-none' : ''}>
-            {investors.length === 0 && <div className="p-3 text-xs text-slate-400">Aucun investisseur</div>}
+            {investors.length === 0 && <div className="p-3 text-xs text-slate-400">{t('messages.no_investor')}</div>}
             {investors.map(inv => (
               <label key={inv.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm">
                 <input
@@ -270,7 +279,7 @@ function ComposeModal({ onClose, onSent }) {
           </div>
         </div>
 
-        <label className="block text-xs text-slate-500 mb-1">Sujet *</label>
+        <label className="block text-xs text-slate-500 mb-1">{t('messages.subject')}</label>
         <input
           value={subject}
           onChange={e => setSubject(e.target.value)}
@@ -278,7 +287,7 @@ function ComposeModal({ onClose, onSent }) {
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
         />
 
-        <label className="block text-xs text-slate-500 mb-1">Message *</label>
+        <label className="block text-xs text-slate-500 mb-1">{t('messages.message')}</label>
         <textarea
           value={body}
           onChange={e => setBody(e.target.value)}
@@ -286,17 +295,17 @@ function ComposeModal({ onClose, onSent }) {
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-5 resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
         />
 
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-col sm:flex-row sm:justify-end gap-2">
           <button
             type="button" disabled={busy} onClick={onClose}
             className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700"
-          >Annuler</button>
+          >{t('common.cancel')}</button>
           <button
             type="submit" disabled={busy}
             className="px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-60"
             style={{ backgroundColor: 'var(--color-primary)' }}
           >
-            {busy ? 'Envoi…' : (toAll ? 'Envoyer à tous' : `Envoyer (${selectedIds.size})`)}
+            {busy ? t('messages.sending') : (toAll ? t('messages.send_all') : t('messages.send_count', { count: selectedIds.size }))}
           </button>
         </div>
       </form>
@@ -305,6 +314,8 @@ function ComposeModal({ onClose, onSent }) {
 }
 
 export default function MessagesPage() {
+  const t = useT()
+  const { lang } = usePrefsStore()
   const [messages, setMessages] = useState([])
   const [selected, setSelected] = useState(null)
   const [reply, setReply] = useState('')
@@ -358,21 +369,21 @@ export default function MessagesPage() {
   return (
     <div className="p-4 md:p-8">
       <div className="flex items-center justify-between mb-4 md:mb-6 gap-3 flex-wrap">
-        <h2 className="text-lg md:text-xl font-bold text-slate-800">Messages</h2>
+        <h2 className="text-lg md:text-xl font-bold text-slate-800">{t('messages.title')}</h2>
         <button
           onClick={() => setComposing(true)}
           className="px-3 md:px-4 py-2 rounded-lg text-white text-sm font-medium"
           style={{ backgroundColor: 'var(--color-primary)' }}
         >
-          + Nouveau message
+          {t('messages.new')}
         </button>
       </div>
 
       <div className="flex gap-1 mb-4 text-sm">
         {[
-          { k: 'all', label: 'Tous', count: messages.length },
-          { k: 'in', label: 'Reçus', count: messages.filter(m => m.direction === 'in').length, badge: unreadCount },
-          { k: 'out', label: 'Envoyés', count: messages.filter(m => m.direction === 'out').length },
+          { k: 'all', label: t('messages.all'), count: messages.length },
+          { k: 'in', label: t('messages.received'), count: messages.filter(m => m.direction === 'in').length, badge: unreadCount },
+          { k: 'out', label: t('messages.sent'), count: messages.filter(m => m.direction === 'out').length },
         ].map(t => (
           <button
             key={t.k}
@@ -393,20 +404,20 @@ export default function MessagesPage() {
       <div className="md:hidden">
         {!showDetail ? (
           <div className="bg-white rounded-xl shadow-sm overflow-auto">
-            {visible.length === 0 && <div className="p-6 text-slate-400 text-sm text-center">Aucun message</div>}
+            {visible.length === 0 && <div className="p-6 text-slate-400 text-sm text-center">{t('messages.empty')}</div>}
             {visible.map(msg => (
-              <MessageListItem key={msg.id} msg={msg} selected={selected?.id === msg.id} onClick={() => handleSelect(msg)} />
+              <MessageListItem key={msg.id} msg={msg} selected={selected?.id === msg.id} onClick={() => handleSelect(msg)} t={t} lang={lang} />
             ))}
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm flex flex-col min-h-[500px]">
             <div className="px-4 pt-3 pb-1">
               <button onClick={() => setShowDetail(false)} className="text-xs text-slate-400 hover:text-slate-600">
-                ← Retour à la liste
+                ← {t('messages.back_to_list')}
               </button>
             </div>
             {selected && (
-              <ConversationView msg={selected} reply={reply} setReply={setReply} onReply={handleReply} busy={busy} />
+              <ConversationView msg={selected} reply={reply} setReply={setReply} onReply={handleReply} busy={busy} t={t} lang={lang} />
             )}
           </div>
         )}
@@ -415,18 +426,18 @@ export default function MessagesPage() {
       {/* Desktop */}
       <div className="hidden md:grid grid-cols-3 gap-6 h-[650px]">
         <div className="col-span-1 bg-white rounded-xl shadow-sm overflow-auto">
-          {visible.length === 0 && <div className="p-6 text-slate-400 text-sm text-center">Aucun message</div>}
+          {visible.length === 0 && <div className="p-6 text-slate-400 text-sm text-center">{t('messages.empty')}</div>}
           {visible.map(msg => (
-            <MessageListItem key={msg.id} msg={msg} selected={selected?.id === msg.id} onClick={() => handleSelect(msg)} />
+            <MessageListItem key={msg.id} msg={msg} selected={selected?.id === msg.id} onClick={() => handleSelect(msg)} t={t} lang={lang} />
           ))}
         </div>
         <div className="col-span-2 bg-white rounded-xl shadow-sm flex flex-col">
           {!selected ? (
             <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-              Sélectionnez un message pour voir la conversation
+              {t('messages.select_prompt')}
             </div>
           ) : (
-            <ConversationView msg={selected} reply={reply} setReply={setReply} onReply={handleReply} busy={busy} />
+            <ConversationView msg={selected} reply={reply} setReply={setReply} onReply={handleReply} busy={busy} t={t} lang={lang} />
           )}
         </div>
       </div>

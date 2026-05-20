@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.investment import Investment
 from app.models.investor import Investor
 from app.models.user import User
-from app.dependencies.auth import get_current_user, admin_or_analyst, admin_only
+from app.dependencies.auth import get_current_user, admin_or_cashier, admin_only
 
 router = APIRouter(prefix="/api/investments", tags=["investments"])
 
@@ -34,7 +34,7 @@ class InvestmentUpdate(BaseModel):
 @router.get("")
 def list_investments(
     investor_id: uuid.UUID | None = None,
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
     db: Session = Depends(get_db),
 ):
     q = db.query(Investment)
@@ -75,7 +75,7 @@ def get_investment(
 @router.post("", status_code=201)
 def create_investment(
     body: InvestmentCreate,
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
     db: Session = Depends(get_db),
 ):
     investor = db.query(Investor).filter(Investor.id == body.investor_id).first()
@@ -92,7 +92,7 @@ def create_investment(
 def update_investment(
     inv_id: uuid.UUID,
     body: InvestmentUpdate,
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
     db: Session = Depends(get_db),
 ):
     inv = db.query(Investment).filter(Investment.id == inv_id).first()

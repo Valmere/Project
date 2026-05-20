@@ -18,6 +18,7 @@ if existing:
 else:
     admin = User(
         email=EMAIL,
+        username="admin",
         hashed_password=hash_password(PASSWORD),
         full_name=FULL_NAME,
         role="admin",

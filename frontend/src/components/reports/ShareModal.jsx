@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import api from '../../api/axios'
 import { shareReport } from '../../api/reports.api'
+import { usePrefsStore, useT } from '../../store/prefs.store'
+import { formatDate } from '../../utils/format'
 
 const Ic = {
   copy: (
@@ -47,6 +49,8 @@ const Ic = {
  * Nécessite `reportId` et une `displayName` (nom investisseur pour le titre).
  */
 export default function ShareModal({ reportId, displayName, onClose }) {
+  const t = useT()
+  const { lang } = usePrefsStore()
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const [url, setUrl] = useState('')
@@ -59,7 +63,7 @@ export default function ShareModal({ reportId, displayName, onClose }) {
         setUrl(d.url)
         setExpiresAt(d.expires_at)
       })
-      .catch(e => setErr(e?.response?.data?.detail || 'Impossible de générer le lien'))
+      .catch(e => setErr(e?.response?.data?.detail || t('share.error')))
       .finally(() => setLoading(false))
   }, [reportId])
 
@@ -79,8 +83,8 @@ export default function ShareModal({ reportId, displayName, onClose }) {
     }
   }
 
-  const subject = `Relevé de compte${displayName ? ` — ${displayName}` : ''}`
-  const body = `Bonjour,\n\nVoici votre relevé de compte. Vous pouvez le télécharger via le lien ci-dessous (valide 72h) :\n\n${url}\n\nCordialement.`
+  const subject = t('share.email_subject', { suffix: displayName ? ` - ${displayName}` : '' })
+  const body = t('share.email_body', { url })
   const mailHref = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
   const waHref = `https://wa.me/?text=${encodeURIComponent(`${subject}\n${url}`)}`
 
@@ -103,9 +107,9 @@ export default function ShareModal({ reportId, displayName, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 modal-mobile-sheet-overlay" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5"
+        className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 modal-mobile-sheet-panel"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-3">
@@ -116,7 +120,7 @@ export default function ShareModal({ reportId, displayName, onClose }) {
             >
               {Ic.share}
             </div>
-            <h3 className="font-semibold text-slate-800">Partager le rapport</h3>
+            <h3 className="font-semibold text-slate-800">{t('share.title')}</h3>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
             {Ic.close}
@@ -124,34 +128,44 @@ export default function ShareModal({ reportId, displayName, onClose }) {
         </div>
 
         {loading ? (
-          <div className="py-6 text-center text-sm text-slate-400">Génération du lien…</div>
+          <div className="py-6 text-center text-sm text-slate-400">{t('share.loading')}</div>
         ) : err ? (
           <div className="px-3 py-2 rounded-lg text-sm bg-red-50 text-red-700 border border-red-100">{err}</div>
         ) : (
           <>
             <p className="text-xs text-slate-500 mb-2">
-              Ce lien permet à la personne qui le reçoit de télécharger le rapport sans se connecter.
-              Il expire {expiresAt ? `le ${new Date(expiresAt).toLocaleString('fr-FR')}` : 'dans 72h'}.
+              {t('share.description')}{' '}
+              {expiresAt
+                ? t('share.expires_at', {
+                    date: formatDate(expiresAt, lang, {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    }),
+                  })
+                : t('share.expires_72h')}
             </p>
 
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
               <input
                 readOnly
                 value={url}
                 onFocus={(e) => e.target.select()}
-                className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                className="w-full sm:flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
               <button
                 onClick={copyLink}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg text-white font-medium whitespace-nowrap"
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg text-white font-medium whitespace-nowrap"
                 style={{ backgroundColor: 'var(--color-primary)' }}
               >
                 {Ic.copy}
-                {copied ? 'Copié !' : 'Copier'}
+                {copied ? t('share.copied') : t('share.copy')}
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <a
                 href={mailHref}
                 className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600"
@@ -172,10 +186,10 @@ export default function ShareModal({ reportId, displayName, onClose }) {
                 onClick={nativeShare}
                 className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600"
                 disabled={typeof navigator !== 'undefined' && !navigator.share}
-                title={typeof navigator !== 'undefined' && !navigator.share ? 'Non disponible sur ce navigateur' : 'Utiliser le partage système'}
+                title={typeof navigator !== 'undefined' && !navigator.share ? t('share.native_unavailable') : t('share.native_title')}
               >
                 <span className="text-slate-500">{Ic.share}</span>
-                <span className="text-[11px] font-medium">Autre…</span>
+                <span className="text-[11px] font-medium">{t('share.native')}</span>
               </button>
             </div>
           </>

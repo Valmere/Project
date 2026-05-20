@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -13,6 +14,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.webauthn_credential import WebAuthnCredential
 from app.services.auth_service import verify_password, create_access_token, hash_password
+from app.services.user_identity import generate_temp_password
 from app.dependencies.auth import get_current_user
 from app.config import settings
 
@@ -50,18 +52,67 @@ class WebAuthnLoginCompleteRequest(BaseModel):
     credential: dict
 
 
-@router.post("/login")
-def login(body: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == body.email, User.is_active == True).first()
-    if not user or not verify_password(body.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email ou mot de passe incorrect")
-    token = create_access_token({"sub": str(user.id), "role": user.role})
+class AccountRecoveryRequest(BaseModel):
+    username: str
+
+
+def _find_user_by_identifier(db: Session, identifier: str) -> User | None:
+    value = (identifier or "").strip().lower()
+    if not value:
+        return None
+    return (
+        db.query(User)
+        .filter(
+            User.is_active == True,
+            or_(
+                func.lower(User.email) == value,
+                func.lower(User.username) == value,
+            ),
+        )
+        .first()
+    )
+
+
+def _login_payload(user: User) -> dict:
     return {
-        "access_token": token,
+        "access_token": create_access_token({"sub": str(user.id), "role": user.role}),
         "token_type": "bearer",
+        "id": str(user.id),
         "role": user.role,
         "full_name": user.full_name,
+        "email": user.email,
+        "username": user.username,
+        "investor_id": str(user.investor_id) if user.investor_id else None,
         "must_change_password": bool(user.must_change_password),
+    }
+
+
+@router.post("/login")
+def login(body: LoginRequest, db: Session = Depends(get_db)):
+    user = _find_user_by_identifier(db, body.email)
+    if not user or not verify_password(body.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Identifiant ou mot de passe incorrect")
+    return _login_payload(user)
+
+
+@router.post("/recover-account")
+def recover_account(body: AccountRecoveryRequest, db: Session = Depends(get_db)):
+    user = _find_user_by_identifier(db, body.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Aucun compte actif ne correspond a cet identifiant")
+
+    temp_password = generate_temp_password()
+    user.hashed_password = hash_password(temp_password)
+    user.must_change_password = True
+    db.commit()
+
+    return {
+        "username": user.username,
+        "email": user.email,
+        "full_name": user.full_name,
+        "temp_password": temp_password,
+        "must_change_password": True,
+        "message": "Mot de passe temporaire genere. Connectez-vous avec celui-ci, puis choisissez un nouveau mot de passe.",
     }
 
 
@@ -89,6 +140,56 @@ def change_password(
     return {"message": "Mot de passe modifié avec succès"}
 
 
+@router.get("/webauthn/credentials")
+def list_webauthn_credentials(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Liste les appareils biométriques enregistrés pour l'utilisateur courant."""
+    rows = (
+        db.query(WebAuthnCredential)
+        .filter(WebAuthnCredential.user_id == current_user.id)
+        .order_by(WebAuthnCredential.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": str(c.id),
+            "device_name": c.device_name,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "last_used_at": c.last_used_at.isoformat() if c.last_used_at else None,
+        }
+        for c in rows
+    ]
+
+
+@router.delete("/webauthn/credentials/{cred_id}")
+def delete_webauthn_credential(
+    cred_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Supprime un appareil biométrique appartenant à l'utilisateur courant."""
+    import uuid as _uuid
+    try:
+        cid = _uuid.UUID(cred_id)
+    except ValueError:
+        raise HTTPException(400, "Identifiant invalide")
+    cred = (
+        db.query(WebAuthnCredential)
+        .filter(
+            WebAuthnCredential.id == cid,
+            WebAuthnCredential.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not cred:
+        raise HTTPException(404, "Appareil introuvable")
+    db.delete(cred)
+    db.commit()
+    return {"deleted": True}
+
+
 @router.post("/webauthn/register/begin")
 def webauthn_register_begin(
     body: WebAuthnRegisterBeginRequest,
@@ -101,7 +202,7 @@ def webauthn_register_begin(
         user_name=current_user.email,
         user_display_name=current_user.full_name,
     )
-    _challenges[current_user.email] = options.challenge
+    _challenges[str(current_user.id)] = options.challenge
     return json.loads(webauthn.options_to_json(options))
 
 
@@ -111,7 +212,7 @@ def webauthn_register_complete(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    challenge = _challenges.pop(current_user.email, None)
+    challenge = _challenges.pop(str(current_user.id), None)
     if not challenge:
         raise HTTPException(status_code=400, detail="Challenge expiré, recommencez")
 
@@ -140,7 +241,7 @@ def webauthn_register_complete(
 
 @router.post("/webauthn/login/begin")
 def webauthn_login_begin(body: WebAuthnLoginBeginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == body.email, User.is_active == True).first()
+    user = _find_user_by_identifier(db, body.email)
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
 
@@ -153,19 +254,19 @@ def webauthn_login_begin(body: WebAuthnLoginBeginRequest, db: Session = Depends(
         rp_id=settings.WEBAUTHN_RP_ID,
         allow_credentials=allow_credentials,
     )
-    _challenges[body.email] = options.challenge
+    _challenges[str(user.id)] = options.challenge
     return json.loads(webauthn.options_to_json(options))
 
 
 @router.post("/webauthn/login/complete")
 def webauthn_login_complete(body: WebAuthnLoginCompleteRequest, db: Session = Depends(get_db)):
-    challenge = _challenges.pop(body.email, None)
-    if not challenge:
-        raise HTTPException(status_code=400, detail="Challenge expiré, recommencez")
-
-    user = db.query(User).filter(User.email == body.email, User.is_active == True).first()
+    user = _find_user_by_identifier(db, body.email)
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+
+    challenge = _challenges.pop(str(user.id), None)
+    if not challenge:
+        raise HTTPException(status_code=400, detail="Challenge expiré, recommencez")
 
     credential_str = json.dumps(body.credential)
     parsed = webauthn.parse_authentication_credential_json(credential_str)
@@ -193,5 +294,4 @@ def webauthn_login_complete(body: WebAuthnLoginCompleteRequest, db: Session = De
     cred.last_used_at = datetime.now(timezone.utc)
     db.commit()
 
-    token = create_access_token({"sub": str(user.id), "role": user.role})
-    return {"access_token": token, "token_type": "bearer", "role": user.role, "full_name": user.full_name}
+    return _login_payload(user)

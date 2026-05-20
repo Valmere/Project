@@ -7,10 +7,20 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models.performance import Performance
 from app.models.investment import Investment
+from app.models.investor import Investor
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.dependencies.auth import get_current_user, admin_or_analyst
-from app.services.roi_calculator import compute_roi, compute_max_drawdown, compute_pnl
+from app.dependencies.auth import get_current_user, admin_or_cashier
+from app.services.roi_calculator import compute_max_drawdown, compute_roi_from_pnl
+from app.services.currency import RateCache
+from app.services.portfolio_math import (
+    CASH_FLOW_TYPES,
+    TX_SIGNS,
+    is_effective_pnl_tx,
+    latest_bailout_key_by_investment,
+    portfolio_totals_by_investor,
+    transaction_business_amount,
+)
 
 router = APIRouter(prefix="/api/performances", tags=["performances"])
 
@@ -43,7 +53,7 @@ def _resolve_period(period_type: str, period_label: str | None, period_start, pe
 def list_performances(
     investment_id: uuid.UUID | None = None,
     investor_id: uuid.UUID | None = None,
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
     db: Session = Depends(get_db),
 ):
     q = db.query(Performance)
@@ -73,7 +83,7 @@ def my_performances(
 @router.post("/calculate")
 def calculate_performance(
     body: CalculateRequest,
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
     db: Session = Depends(get_db),
 ):
     investment = db.query(Investment).filter(Investment.id == body.investment_id).first()
@@ -91,6 +101,7 @@ def calculate_performance(
         db.query(Transaction)
         .filter(
             Transaction.investment_id == body.investment_id,
+            Transaction.status == "active",
             Transaction.transaction_date >= period_start,
             Transaction.transaction_date <= period_end,
         )
@@ -98,17 +109,52 @@ def calculate_performance(
         .all()
     )
 
-    opening_value = float(investment.initial_capital)
-    closing_value = float(investment.current_value)
+    rates = RateCache(db)
+    inv_ccy = (getattr(investment, "currency", None) or "HTG").upper()
+    txs_before = (
+        db.query(Transaction)
+        .filter(
+            Transaction.investment_id == body.investment_id,
+            Transaction.status == "active",
+            Transaction.transaction_date < period_start,
+        )
+        .order_by(Transaction.transaction_date.asc())
+        .all()
+    )
+    txs_to_close = txs_before + txs
+    owner = db.query(Investor).filter(Investor.id == investment.investor_id).first()
+    company_ids = {investment.investor_id} if getattr(owner, "is_company", False) else None
+    opening_totals = portfolio_totals_by_investor(
+        [investment],
+        txs_before,
+        rates,
+        inv_ccy,
+        company_investor_ids=company_ids,
+    )
+    closing_totals = portfolio_totals_by_investor(
+        [investment],
+        txs_to_close,
+        rates,
+        inv_ccy,
+        company_investor_ids=company_ids,
+    )
+    opening_value = opening_totals["current_by_investor"].get(investment.investor_id, 0.0)
+    closing_value = closing_totals["current_by_investor"].get(investment.investor_id, 0.0)
 
     net_deposits = sum(
-        float(tx.amount) if tx.type == "deposit" else -float(tx.amount) if tx.type == "withdrawal" else 0
+        TX_SIGNS.get(tx.type, 0) * transaction_business_amount(tx, rates, inv_ccy)
+        if tx.type in CASH_FLOW_TYPES else 0
         for tx in txs
     )
-    gross_gain = closing_value - opening_value - net_deposits
-    fees = sum(float(tx.amount) for tx in txs if tx.type == "fee")
+    latest_bailouts = latest_bailout_key_by_investment(txs_to_close)
+    gross_gain = sum(
+        TX_SIGNS.get(tx.type, 0) * transaction_business_amount(tx, rates, inv_ccy)
+        for tx in txs
+        if is_effective_pnl_tx(tx, latest_bailouts)
+    )
+    fees = sum(transaction_business_amount(tx, rates, inv_ccy) for tx in txs if tx.type == "fee")
 
-    roi = compute_roi(opening_value, closing_value, net_deposits)
+    roi = compute_roi_from_pnl(gross_gain, closing_value)
     value_series = [opening_value] + [closing_value]
     max_dd = compute_max_drawdown(value_series) if len(value_series) > 1 else 0.0
 

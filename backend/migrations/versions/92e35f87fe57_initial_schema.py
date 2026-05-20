@@ -70,6 +70,7 @@ def upgrade() -> None:
     op.create_table('users',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('email', sa.String(length=255), nullable=False),
+    sa.Column('username', sa.String(length=80), nullable=True),
     sa.Column('hashed_password', sa.String(length=255), nullable=False),
     sa.Column('full_name', sa.String(length=255), nullable=False),
     sa.Column('role', sa.String(length=20), nullable=False),
@@ -80,6 +81,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
+    op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
     op.create_table('investments',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('investor_id', sa.Uuid(), nullable=False),
@@ -127,6 +129,9 @@ def upgrade() -> None:
     sa.Column('error_message', sa.Text(), nullable=True),
     sa.Column('generated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('generated_by', sa.Uuid(), nullable=True),
+    sa.Column('published_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('available_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('signature_name', sa.String(length=255), nullable=True),
     sa.Column('download_count', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['generated_by'], ['users.id'], use_alter=True),
@@ -134,6 +139,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['investor_id'], ['investors.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index(op.f('ix_reports_available_at'), 'reports', ['available_at'], unique=False)
     op.create_index(op.f('ix_reports_investor_id'), 'reports', ['investor_id'], unique=False)
     op.create_table('webauthn_credentials',
     sa.Column('id', sa.Uuid(), nullable=False),
@@ -210,6 +216,7 @@ def downgrade() -> None:
     op.drop_table('performances')
     op.drop_index(op.f('ix_webauthn_credentials_user_id'), table_name='webauthn_credentials')
     op.drop_table('webauthn_credentials')
+    op.drop_index(op.f('ix_reports_available_at'), table_name='reports')
     op.drop_index(op.f('ix_reports_investor_id'), table_name='reports')
     op.drop_table('reports')
     op.drop_index(op.f('ix_messages_investor_id'), table_name='messages')
@@ -217,6 +224,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_investments_investor_id'), table_name='investments')
     op.drop_table('investments')
     op.drop_index(op.f('ix_users_email'), table_name='users')
+    op.drop_index(op.f('ix_users_username'), table_name='users')
     op.drop_table('users')
     op.drop_table('investors')
     op.drop_table('company_settings')

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 import { viewReport } from '../api/reports.api'
-import { usePrefsStore } from '../store/prefs.store'
+import { useAuthStore } from '../store/auth.store'
+import { usePrefsStore, useT } from '../store/prefs.store'
 import StatementViewer from '../components/reports/StatementViewer'
 import ShareModal from '../components/reports/ShareModal'
 
@@ -41,28 +42,36 @@ const Ic = {
 export default function ReportViewerPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const t = useT()
   const { lang, currency } = usePrefsStore()
+  const { user } = useAuthStore()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const [shareOpen, setShareOpen] = useState(false)
+  const downloadable = !!data?.report?.storage_path && data?.report?.status !== 'scheduled'
 
   useEffect(() => {
     setLoading(true)
-    viewReport(id, { display_currency: currency })
+    viewReport(id, { display_currency: currency, lang })
       .then(setData)
-      .catch(e => setErr(e?.response?.data?.detail || 'Impossible de charger le rapport'))
+      .catch(e => setErr(e?.response?.data?.detail || t('report_viewer.load_error')))
       .finally(() => setLoading(false))
-  }, [id, currency])
+  }, [id, currency, lang])
 
   const handleDownload = async () => {
-    const res = await api.get(`/reports/${id}/download`, { responseType: 'blob' })
+    // Régénération à la volée dans la langue + devise affichée à l'écran,
+    // pour que le téléchargement matche ce que l'utilisateur lit.
+    const res = await api.get(`/reports/${id}/download`, {
+      responseType: 'blob',
+      params: { lang, display_currency: currency },
+    })
     const cd = res.headers?.['content-disposition'] || ''
     const match = /filename="?([^"]+)"?/.exec(cd)
     const url = URL.createObjectURL(res.data)
     const a = document.createElement('a')
     a.href = url
-    a.download = match ? match[1] : `rapport_${id}.xlsx`
+    a.download = match ? match[1] : `rapport_${id}.${data?.report?.format === 'excel' ? 'xlsx' : 'pdf'}`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -72,14 +81,14 @@ export default function ReportViewerPage() {
   }
 
   return (
-    <div className="p-4 md:p-8 max-w-5xl mx-auto">
+    <div className="p-3 sm:p-4 md:p-8 max-w-5xl mx-auto">
       {/* Toolbar — hidden when printing */}
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4 print:hidden">
         <button
           onClick={() => navigate(-1)}
           className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700"
         >
-          {Ic.back} Retour
+          {Ic.back} {t('report_viewer.back')}
         </button>
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -87,30 +96,32 @@ export default function ReportViewerPage() {
             disabled={!data}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-sm hover:bg-slate-50 disabled:opacity-50"
           >
-            {Ic.print} Imprimer
+            {Ic.print} {t('report_viewer.print')}
           </button>
-          <button
-            onClick={() => setShareOpen(true)}
-            disabled={!data}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm disabled:opacity-50"
-            style={{ borderColor: 'var(--color-secondary)', color: 'var(--color-secondary)' }}
-          >
-            {Ic.share} Partager
-          </button>
+          {user?.role !== 'investor' && (
+            <button
+              onClick={() => setShareOpen(true)}
+              disabled={!downloadable}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm disabled:opacity-50"
+              style={{ borderColor: 'var(--color-secondary)', color: 'var(--color-secondary)' }}
+            >
+              {Ic.share} {t('report_viewer.share')}
+            </button>
+          )}
           <button
             onClick={handleDownload}
-            disabled={!data}
+            disabled={!downloadable}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50"
             style={{ backgroundColor: 'var(--color-primary)' }}
           >
-            {Ic.download} Télécharger
+            {Ic.download} {t('report_viewer.download')}
           </button>
         </div>
       </div>
 
       {loading && (
         <div className="bg-white rounded-xl shadow-sm p-8 text-center text-sm text-slate-400 print:hidden">
-          Chargement du rapport…
+          {t('report_viewer.loading')}
         </div>
       )}
       {err && (
@@ -118,7 +129,7 @@ export default function ReportViewerPage() {
       )}
       {data && <StatementViewer data={data} lang={lang} />}
 
-      {shareOpen && (
+      {shareOpen && user?.role !== 'investor' && (
         <ShareModal
           reportId={id}
           displayName={data?.investor?.full_name}

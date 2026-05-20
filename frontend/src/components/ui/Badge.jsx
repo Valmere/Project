@@ -1,14 +1,14 @@
 const variants = {
-  green: "bg-green-100 text-green-700",
-  red: "bg-red-100 text-red-700",
-  blue: "bg-blue-100 text-blue-700",
-  yellow: "bg-yellow-100 text-yellow-700",
-  gray: "bg-slate-100 text-slate-600",
+  green: "bg-emerald-50 text-emerald-700 border border-emerald-100",
+  red: "bg-rose-50 text-rose-700 border border-rose-100",
+  blue: "bg-sky-50 text-sky-700 border border-sky-100",
+  yellow: "bg-amber-50 text-amber-700 border border-amber-100",
+  gray: "bg-slate-100 text-slate-600 border border-slate-200",
 }
 
 export default function Badge({ label, variant = "gray" }) {
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${variants[variant]}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] ${variants[variant]}`}>
       {label}
     </span>
   )

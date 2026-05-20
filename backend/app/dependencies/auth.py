@@ -32,5 +32,9 @@ def require_role(*roles: str):
 
 
 admin_only = require_role("admin")
-admin_or_analyst = require_role("admin", "analyst")
+admin_or_cashier = require_role("admin", "cashier")
+# Rétro-compatibilité : l'ancien rôle « analyst » est renommé « cashier ».
+# On garde l'alias pour ne pas casser les imports legacy pendant la
+# migration, mais tous les routers doivent utiliser admin_or_cashier.
+admin_or_analyst = admin_or_cashier
 any_authenticated = Depends(get_current_user)

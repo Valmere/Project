@@ -20,6 +20,9 @@ class Report(Base):
     error_message: Mapped[str | None] = mapped_column(Text)
     generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     generated_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id", use_alter=True))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signature_name: Mapped[str | None] = mapped_column(String(255))
     download_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

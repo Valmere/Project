@@ -28,6 +28,8 @@
   .summary-box .box-value { font-size: 16px; font-weight: bold; color: #1A3A5C; margin-top: 4px; }
   .summary-box .box-value.positive { color: #16a34a; }
   .summary-box .box-value.negative { color: #dc2626; }
+  .critical-roi { display: inline-flex; align-items: center; gap: 4px; color: #dc2626; }
+  .critical-roi svg { width: 14px; height: 14px; }
 
   /* Section titles */
   .section-title { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.8px; color: white; background: #1A3A5C; padding: 7px 12px; border-radius: 4px; margin-bottom: 10px; }
@@ -91,25 +93,37 @@
   </div>
 
   <!-- Summary boxes -->
+  {% set current_value = investment.current_value | float %}
+  {% set initial_capital = investment.initial_capital | float %}
+  {% set pnl = current_value - initial_capital %}
+  {% set roi_unavailable = pnl < 0 and current_value < 0 %}
+  {% set roi = none if roi_unavailable else (pnl / current_value * 100 if current_value else 0) %}
   <div class="summary-grid">
     <div class="summary-box">
       <div class="box-label">Capital initial</div>
-      <div class="box-value">{{ "{:,.2f}".format(investment.initial_capital | float) }} HTG</div>
+      <div class="box-value">{{ "{:,.2f}".format(initial_capital) }} HTG</div>
     </div>
     <div class="summary-box">
       <div class="box-label">Valeur actuelle</div>
-      <div class="box-value">{{ "{:,.2f}".format(investment.current_value | float) }} HTG</div>
+      <div class="box-value">{{ "{:,.2f}".format(current_value) }} HTG</div>
     </div>
     <div class="summary-box">
       <div class="box-label">ROI</div>
-      {% set roi = ((investment.current_value | float) - (investment.initial_capital | float)) / (investment.initial_capital | float) * 100 if investment.initial_capital else 0 %}
-      <div class="box-value {% if roi >= 0 %}positive{% else %}negative{% endif %}">
-        {{ "{:+.2f}".format(roi) }}%
+      {% if roi_unavailable %}
+      <div class="box-value critical-roi">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 9v4" />
+          <path d="M12 17h.01" />
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+        </svg>
+        N/A
       </div>
+      {% else %}
+      <div class="box-value {% if roi >= 0 %}positive{% else %}negative{% endif %}">{{ "{:+.2f}".format(roi or 0) }}%</div>
+      {% endif %}
     </div>
     <div class="summary-box">
       <div class="box-label">Gain / Perte</div>
-      {% set pnl = (investment.current_value | float) - (investment.initial_capital | float) %}
       <div class="box-value {% if pnl >= 0 %}positive{% else %}negative{% endif %}">
         {{ "{:+,.2f}".format(pnl) }} HTG
       </div>

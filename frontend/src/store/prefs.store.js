@@ -8,18 +8,41 @@ export const CURRENCIES = [
   { code: 'EUR', symbol: '€', label: 'Euro', locale: 'fr-FR', decimals: 2 },
 ]
 
+export function applyTheme(theme) {
+  const normalized = theme === 'dark' ? 'dark' : 'light'
+  if (typeof document === 'undefined') return
+  document.documentElement.dataset.theme = normalized
+  document.documentElement.style.colorScheme = normalized
+}
+
 export const usePrefsStore = create(
   persist(
     (set, get) => ({
       lang: 'fr',
       currency: 'HTG',
+      theme: 'light',
       setLang: (lang) => set({ lang }),
       setCurrency: (currency) => set({ currency }),
+      setTheme: (theme) => {
+        const normalized = theme === 'dark' ? 'dark' : 'light'
+        applyTheme(normalized)
+        set({ theme: normalized })
+      },
+      toggleTheme: () => {
+        const next = get().theme === 'dark' ? 'light' : 'dark'
+        applyTheme(next)
+        set({ theme: next })
+      },
       t: (key, vars) => translate(get().lang, key, vars),
     }),
-    { name: 'valmere-prefs' }
+    {
+      name: 'valmere-prefs',
+      onRehydrateStorage: () => (state) => applyTheme(state?.theme || 'light'),
+    }
   )
 )
+
+applyTheme(usePrefsStore.getState().theme)
 
 // Hook-like helper for cleaner usage
 export function useT() {

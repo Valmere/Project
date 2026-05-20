@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAdminDashboard } from '../../api/dashboard.api'
-import { getInvestors } from '../../api/investors.api'
+import { getInvestors, getGlobalStats } from '../../api/investors.api'
+import CompanyHero from '../../components/dashboard/CompanyHero'
 import StatCard from '../../components/ui/StatCard'
 import FilterBar from '../../components/ui/FilterBar'
+import RoiValue from '../../components/ui/RoiValue'
 import ROILineChart from '../../components/charts/ROILineChart'
 import CapitalBarChart from '../../components/charts/CapitalBarChart'
 import { usePrefsStore, useT } from '../../store/prefs.store'
 import { useRatesStore } from '../../store/rates.store'
-import { formatMoney, formatNumber, formatPercent, getCurrencyMeta } from '../../utils/format'
+import { formatMoney, formatNumber, getCurrencyMeta } from '../../utils/format'
 
 function SkeletonCard() {
   return (
@@ -23,11 +25,11 @@ function SkeletonCard() {
 function PnlCard({ label, value, periodLabel, currency, lang }) {
   const isPos = value >= 0
   return (
-    <div className="card card-hover p-4 sm:p-5">
-      <div className="text-[11px] font-semibold tracking-[0.07em] uppercase mb-3" style={{ color: 'var(--text-3)' }}>
+    <div className="premium-stat-card premium-stat-neutral card-hover p-4 sm:p-5">
+      <div className="premium-label premium-stat-title mb-3">
         {label}
       </div>
-      <div className="text-[18px] sm:text-[20px] font-bold leading-none tracking-tight mb-2 break-all" style={{ color: 'var(--text-1)' }}>
+      <div className="premium-number premium-stat-value premium-stat-danger-value mb-2 break-all">
         {formatMoney(value, { currency, lang, sign: true })}
       </div>
       <span className={isPos ? 'trend-up' : 'trend-down'}>
@@ -85,6 +87,7 @@ export default function AdminDashboard() {
   const convert = useRatesStore(s => s.convert)
   const [data, setData] = useState(null)
   const [investors, setInvestors] = useState([])
+  const [globalStats, setGlobalStats] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const [period, setPeriod] = useState('30d')
@@ -96,7 +99,8 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     getInvestors().then(setInvestors).catch(() => setInvestors([]))
-  }, [])
+    getGlobalStats(currency).then(setGlobalStats).catch(() => setGlobalStats(null))
+  }, [currency])
 
   useEffect(() => {
     const params = { period, granularity, lang, currency }
@@ -123,9 +127,36 @@ export default function AdminDashboard() {
       : t(`period.${period}`)
 
   const ratesMissing = data?.rates_missing || []
+  const heroBalance = globalStats
+    ? formatMoney(convert(globalStats.company_va, globalStats.base_currency, currency), { currency, lang })
+    : '—'
+  const heroGlobalVa = globalStats
+    ? formatMoney(convert(globalStats.global_va, globalStats.base_currency, currency), { currency, lang })
+    : '—'
+  const heroCompanyShare = globalStats
+    ? `${(globalStats.company_share_of_global || 0).toFixed(2)} %`
+    : '—'
+
+  // Le backend renvoie chart_data en HTG (devise de base). On convertit
+  // chaque point dans la devise d'affichage pour que l'axe Y matche le
+  // chiffre affiché dans la tuile AUM (sinon 200 USD côté tuile vs
+  // 26 110 HTG sur l'axe Y → confusion garantie).
+  const chartData = useMemo(() => {
+    if (!data?.chart_data) return []
+    return data.chart_data.map(p => ({
+      ...p,
+      closing_value: convert(p.closing_value, baseCcy, currency),
+    }))
+  }, [data?.chart_data, baseCcy, currency, convert])
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto">
+    <div className="premium-dashboard p-3 sm:p-5 lg:p-6 max-w-[1440px] mx-auto">
+
+      <CompanyHero
+        balance={heroBalance}
+        globalValue={heroGlobalVa}
+        share={heroCompanyShare}
+      />
 
       {ratesMissing.length > 0 && (
         <div
@@ -165,10 +196,10 @@ export default function AdminDashboard() {
         onInvestorChange={setInvestorId}
       />
 
-      <h2 className="text-[11px] font-semibold tracking-[0.07em] uppercase mb-3" style={{ color: 'var(--text-3)' }}>
+      <h2 className="premium-section-title mb-3">
         {t('dashboard.overview')}
       </h2>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+      <div className="premium-kpi-grid grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
@@ -177,9 +208,15 @@ export default function AdminDashboard() {
               title={investorId ? t('kpi.investor') : t('kpi.active_investors')}
               value={investorId ? (investors.find(i => i.id === investorId)?.full_name || '—') : formatNumber(data.total_investors, lang)}
               color="primary"
+              variant="neutral"
             />
-            <StatCard title={t('kpi.aum')} value={formatMoney(displayAum, { currency, lang })} color="secondary" />
-            <StatCard title={t('kpi.global_roi')} value={formatPercent(data.global_roi_pct, lang)} color="green" />
+            <StatCard title={t('kpi.aum')} value={formatMoney(displayAum, { currency, lang })} color="secondary" variant="featured" />
+            <StatCard
+              title={t('kpi.global_roi')}
+              value={<RoiValue value={data.global_roi_pct} unavailable={data.roi_unavailable} lang={lang} />}
+              color="red"
+              variant="risk"
+            />
             <PnlCard
               label={t('kpi.pnl_period', { period: periodLabel })}
               value={currentPnl}
@@ -191,11 +228,11 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
-        <div className="card p-4 sm:p-6">
+      <div className="premium-chart-grid grid grid-cols-1 min-[901px]:grid-cols-2 gap-4 sm:gap-6">
+        <div className="card wealth-chart-card p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4 sm:mb-5">
             <div>
-              <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-1)' }}>
+              <h3 className="premium-chart-title">
                 {t('dashboard.roi_evolution')}
               </h3>
               <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-3)' }}>
@@ -205,7 +242,7 @@ export default function AdminDashboard() {
                 {' · '}{periodLabel}
               </p>
             </div>
-            <span className="badge badge-success self-start">%</span>
+            <span className="premium-chart-pill self-start">%</span>
           </div>
           {loading ? (
             <div className="skeleton h-48 sm:h-56 w-full rounded-lg" />
@@ -216,23 +253,23 @@ export default function AdminDashboard() {
           )}
         </div>
 
-        <div className="card p-4 sm:p-6">
+        <div className="card wealth-chart-card p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4 sm:mb-5">
             <div>
-              <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-1)' }}>
+              <h3 className="premium-chart-title">
                 {t('dashboard.capital_evolution')}
               </h3>
               <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-3)' }}>
                 {t('dashboard.capital_subtitle')}
               </p>
             </div>
-            <span className="badge badge-gold self-start">{getCurrencyMeta(currency).code}</span>
+            <span className="premium-chart-pill self-start">{getCurrencyMeta(currency).code}</span>
           </div>
           {loading ? (
             <div className="skeleton h-48 sm:h-56 w-full rounded-lg" />
           ) : (
-            data.chart_data?.length > 0
-              ? <CapitalBarChart data={data.chart_data} />
+            chartData.length > 0
+              ? <CapitalBarChart data={chartData} />
               : <EmptyChart t={t} />
           )}
         </div>

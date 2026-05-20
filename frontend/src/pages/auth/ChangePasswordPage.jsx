@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../api/axios'
 import { useAuthStore } from '../../store/auth.store'
 import { useT } from '../../store/prefs.store'
+import PasswordInput from '../../components/ui/PasswordInput'
 
 /**
  * Écran obligatoire à la première connexion (quand must_change_password=true).
@@ -25,11 +26,11 @@ export default function ChangePasswordPage() {
     e.preventDefault()
     setError('')
     if (newPassword.length < 8) {
-      setError('Le nouveau mot de passe doit contenir au moins 8 caractères')
+      setError(t('change_password.min_error'))
       return
     }
     if (newPassword !== confirm) {
-      setError('Les deux nouveaux mots de passe ne correspondent pas')
+      setError(t('change_password.match_error'))
       return
     }
     setSaving(true)
@@ -42,22 +43,22 @@ export default function ChangePasswordPage() {
       setAuth(token, { ...(user || {}), must_change_password: false })
       navigate(user?.role === 'investor' ? '/investor' : '/admin')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur')
+      setError(err.response?.data?.detail || t('common.error'))
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg-subtle)' }}>
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6 sm:p-8">
+    <div className="min-h-screen flex items-center justify-center p-4 app-main">
+      <div className="w-full max-w-md bg-white/90 rounded-2xl shadow-[var(--shadow-card)] border border-white/70 p-6 sm:p-8 backdrop-blur">
         <h1 className="text-xl font-semibold text-slate-800 mb-1">
-          {forced ? 'Changement de mot de passe obligatoire' : 'Changer de mot de passe'}
+          {forced ? t('change_password.title_forced') : t('change_password.title')}
         </h1>
         <p className="text-[13px] text-slate-500 mb-6">
           {forced
-            ? "Votre mot de passe actuel est temporaire. Choisissez-en un nouveau pour accéder à votre espace."
-            : "Saisissez votre mot de passe actuel puis le nouveau."}
+            ? t('change_password.desc_forced')
+            : t('change_password.desc')}
         </p>
 
         {error && (
@@ -68,30 +69,33 @@ export default function ChangePasswordPage() {
 
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Mot de passe actuel</label>
-            <input
-              type="password" required autoFocus
+            <label className="block text-xs text-slate-500 mb-1">{t('security.password.current')}</label>
+            <PasswordInput
+              required autoFocus
               value={currentPassword}
               onChange={e => setCurrentPassword(e.target.value)}
+              autoComplete="current-password"
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Nouveau mot de passe</label>
-            <input
-              type="password" required minLength={8}
+            <label className="block text-xs text-slate-500 mb-1">{t('security.password.new')}</label>
+            <PasswordInput
+              required minLength={8}
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
+              autoComplete="new-password"
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
-            <p className="text-[11px] text-slate-400 mt-1">Au moins 8 caractères.</p>
+            <p className="text-[11px] text-slate-400 mt-1">{t('change_password.min_hint')}</p>
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Confirmation</label>
-            <input
-              type="password" required minLength={8}
+            <label className="block text-xs text-slate-500 mb-1">{t('security.password.confirm')}</label>
+            <PasswordInput
+              required minLength={8}
               value={confirm}
               onChange={e => setConfirm(e.target.value)}
+              autoComplete="new-password"
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
@@ -102,7 +106,7 @@ export default function ChangePasswordPage() {
             className="w-full py-2.5 rounded-lg text-white text-sm font-medium disabled:opacity-60"
             style={{ backgroundColor: 'var(--color-primary)' }}
           >
-            {saving ? 'Enregistrement…' : 'Changer le mot de passe'}
+            {saving ? t('common.saving') : t('change_password.submit')}
           </button>
 
           {forced && (
@@ -111,7 +115,7 @@ export default function ChangePasswordPage() {
               onClick={() => { logout(); navigate('/login') }}
               className="w-full text-xs text-slate-400 hover:text-slate-600 mt-2"
             >
-              Me déconnecter
+              {t('common.logout')}
             </button>
           )}
         </form>

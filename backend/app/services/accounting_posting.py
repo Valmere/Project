@@ -4,37 +4,51 @@ en partie double, selon un mapping fixe sur le plan comptable par défaut.
 
 Mapping retenu (reproductible, idempotent, vérifiable à l'œil) :
 
-    deposit    (investisseur verse)   DR  512X (banque devise)   CR  421 (compte investisseur)
-    withdrawal (investisseur retire)  DR  421                    CR  512X
-    gain       (valeur ajoutée)       DR  666 (pertes fin.)      CR  421
-    loss       (moins-value)          DR  421                    CR  766 (gains fin.)
-    fee        (frais de gestion)     DR  421                    CR  766
+    deposit / bailout
+                                      DR  512X (banque devise)   CR  421 (compte investisseur)
+    withdrawal / company_withdrawal   DR  421                    CR  512X
+    gain       (valeur ajoutée)       DR  512X                   CR  767 (gains investisseurs)
+    loss       (moins-value)          DR  667 (pertes investisseurs) CR  512X
+    fee        (frais de gestion)     DR  421                    CR  706 (commissions)
 
-Raison du sens des écritures gain/loss :
-  - Valmere doit de l'argent aux investisseurs (421 = passif).
-  - Un gain crédite ce passif (CR 421) → augmente ce qui est dû.
-    Le débit se fait contre un compte de charge (666) pour refléter
-    l'allocation sortante du point de vue de Valmere.
-  - Une perte/un frais diminue le passif (DR 421) ; le crédit va dans
-    un produit (766) — Valmere "récupère" comptablement la différence.
+Cas particulier Valmere & Co (`is_company=True`) :
+    company_bailout / bailout         DR  512X                   CR  101
+    company_withdrawal                DR  101                    CR  512X
+    gain                              DR  512X                   CR  766
+    loss                              DR  666                    CR  512X
+    fee                               DR  512X                   CR  706
+
+Raison du sens des écritures investisseurs :
+  - Les gains financiers sont des produits : les gains société créditent 766,
+    les gains investisseurs créditent 767.
+  - Les pertes financières sont des charges : les pertes société débitent 666,
+    les pertes investisseurs débitent 667.
+  - Les apports/retraits restent sur 421 pour suivre les flux investisseurs.
+  - Un frais diminue aussi le passif, mais le crédit va dans les commissions
+    de gestion (706), séparées des gains financiers.
   - Ce modèle est simplifié (pas de compte intermédiaire de résultat de
     trading) mais suffisant pour produire un bilan et un résultat cohérents
     à partir des seules données Valmere.
 
 Idempotence :
   - `source_type = 'transaction'` et `source_id = tx.id` servent de clé.
-  - `ensure_posted_for_transaction(db, tx)` no-op si une écriture existe déjà.
+  - `ensure_posted_for_transaction(db, tx)` ne duplique pas les écritures ;
+    il répare les anciennes écritures si le mapping ou le montant métier a
+    changé.
 """
 from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
+from collections import defaultdict
 from sqlalchemy.orm import Session
 
 from app.models.transaction import Transaction
 from app.models.investment import Investment
+from app.models.investor import Investor
 from app.models.account import Account
 from app.models.journal_entry import JournalEntry, JournalLine
 from app.services.currency import RateCache, BASE_CCY
+from app.services.portfolio_math import transaction_business_amount_and_currency
 
 
 # Code du compte banque pour chaque devise. Fallback sur 512 générique.
@@ -45,8 +59,25 @@ _BANK_BY_CURRENCY = {
     "CAD": "5124",
 }
 _INVESTOR_ACCOUNT = "421"
+_COMPANY_EQUITY_ACCOUNT = "101"
 _LOSS_ACCOUNT = "666"   # Pertes financières (charge)
+_INVESTOR_LOSS_ACCOUNT = "667"  # Pertes financières investisseurs (charge)
 _GAIN_ACCOUNT = "766"   # Gains financiers (produit)
+_INVESTOR_GAIN_ACCOUNT = "767"  # Gains financiers investisseurs (produit)
+_FEE_ACCOUNT = "706"    # Commissions de gestion (produit)
+
+SUPPORTED_TRANSACTION_TYPES = frozenset({
+    "deposit",
+    "initial",
+    "initial_capital",
+    "withdrawal",
+    "gain",
+    "loss",
+    "fee",
+    "company_withdrawal",
+    "bailout",
+    "company_bailout",
+})
 
 
 class PostingError(Exception):
@@ -74,6 +105,19 @@ class AccountCache:
         return self.get(_BANK_BY_CURRENCY.get((currency or BASE_CCY).upper(), "5121"))
 
 
+def _posting_amount_and_currency(tx: Transaction) -> tuple[float, str]:
+    """
+    Amount used by accounting.
+
+    Older bailouts can have two amounts:
+      - tx.amount: former technical delta
+      - tx.display_amount: amount originally entered by the user
+
+    Accounting must reflect the entered business amount, not the internal delta.
+    """
+    return transaction_business_amount_and_currency(tx)
+
+
 def _build_entry_for_transaction(
     db: Session,
     tx: Transaction,
@@ -87,8 +131,7 @@ def _build_entry_for_transaction(
         .filter(Investment.id == tx.investment_id)
         .first()
     )
-    tx_ccy = (getattr(tx, "currency", None) or BASE_CCY).upper()
-    amount_native = float(tx.amount or 0)
+    amount_native, tx_ccy = _posting_amount_and_currency(tx)
     # Conversion en HTG (devise de base des écritures). strict=False → fallback
     # silencieux si le taux manque (on préfère une écriture au montant brut
     # plutôt qu'un échec bloquant du backfill).
@@ -96,24 +139,48 @@ def _build_entry_for_transaction(
     amount_base = rates.convert(amount_native, tx_ccy, BASE_CCY, strict=False)
 
     tx_type = (tx.type or "").lower()
-    investor_account = accounts.get(_INVESTOR_ACCOUNT)
-    bank_account = accounts.bank(tx_ccy)
-
-    # Décide (debit_account, credit_account) selon le type.
-    if tx_type == "deposit":
-        debit_acc, credit_acc = bank_account, investor_account
-    elif tx_type == "withdrawal":
-        debit_acc, credit_acc = investor_account, bank_account
-    elif tx_type == "gain":
-        debit_acc, credit_acc = accounts.get(_LOSS_ACCOUNT), investor_account
-    elif tx_type in ("loss", "fee"):
-        debit_acc, credit_acc = investor_account, accounts.get(_GAIN_ACCOUNT)
-    else:
-        raise PostingError(f"Type de transaction inconnu : {tx.type!r}")
-
     investor_id = getattr(tx, "investor_id", None) or (
         investment.investor_id if investment else None
     )
+    investor = (
+        db.query(Investor).filter(Investor.id == investor_id).first()
+        if investor_id
+        else None
+    )
+    is_company_tx = bool(getattr(investor, "is_company", False)) or tx_type in {
+        "company_bailout",
+        "company_withdrawal",
+    }
+    investor_account = accounts.get(_INVESTOR_ACCOUNT)
+    company_equity_account = accounts.get(_COMPANY_EQUITY_ACCOUNT) if is_company_tx else None
+    bank_account = accounts.bank(tx_ccy)
+
+    # Décide (debit_account, credit_account) selon le type.
+    if is_company_tx and tx_type in ("deposit", "initial", "initial_capital", "bailout", "company_bailout"):
+        debit_acc, credit_acc = bank_account, company_equity_account
+    elif is_company_tx and tx_type in ("withdrawal", "company_withdrawal"):
+        debit_acc, credit_acc = company_equity_account, bank_account
+    elif is_company_tx and tx_type == "gain":
+        debit_acc, credit_acc = bank_account, accounts.get(_GAIN_ACCOUNT)
+    elif is_company_tx and tx_type == "loss":
+        debit_acc, credit_acc = accounts.get(_LOSS_ACCOUNT), bank_account
+    elif is_company_tx and tx_type == "fee":
+        debit_acc, credit_acc = bank_account, accounts.get(_FEE_ACCOUNT)
+    elif tx_type in ("deposit", "initial", "initial_capital", "bailout", "company_bailout"):
+        debit_acc, credit_acc = bank_account, investor_account
+    elif tx_type in ("withdrawal", "company_withdrawal"):
+        debit_acc, credit_acc = investor_account, bank_account
+    elif tx_type == "gain":
+        debit_acc, credit_acc = bank_account, accounts.get(_INVESTOR_GAIN_ACCOUNT)
+    elif tx_type == "loss":
+        debit_acc, credit_acc = accounts.get(_INVESTOR_LOSS_ACCOUNT), bank_account
+    elif tx_type == "fee":
+        debit_acc, credit_acc = investor_account, accounts.get(_FEE_ACCOUNT)
+    else:
+        supported = ", ".join(sorted(SUPPORTED_TRANSACTION_TYPES))
+        raise PostingError(
+            f"Type de transaction inconnu : {tx.type!r}. Types supportes : {supported}"
+        )
 
     entry = JournalEntry(
         entry_date=tx.transaction_date,
@@ -164,19 +231,28 @@ def ensure_posted_for_transaction(
 ) -> JournalEntry | None:
     """
     Garantit qu'une écriture comptable existe pour `tx`. Si une écriture
-    `source_type='transaction', source_id=tx.id` existe déjà, no-op.
+    `source_type='transaction', source_id=tx.id` existe déjà, on la compare
+    avec le mapping courant et on la répare si nécessaire.
 
-    Retourne l'écriture créée (ou None si no-op).
+    Retourne l'écriture créée/réparée (ou None si no-op).
     """
     existing = (
         db.query(JournalEntry)
         .filter(
             JournalEntry.source_type == "transaction",
             JournalEntry.source_id == tx.id,
+            JournalEntry.status == "posted",
         )
         .first()
     )
     if existing:
+        rates = rates or RateCache(db)
+        accounts = accounts or AccountCache(db)
+        if _repair_entry_if_needed(db, tx, rates, accounts, posted_by=posted_by):
+            if commit:
+                db.commit()
+                db.refresh(existing)
+            return existing
         return None
     rates = rates or RateCache(db)
     accounts = accounts or AccountCache(db)
@@ -186,6 +262,124 @@ def ensure_posted_for_transaction(
         db.commit()
         db.refresh(entry)
     return entry
+
+
+def _repair_entry_if_needed(
+    db: Session,
+    tx: Transaction,
+    rates: RateCache,
+    accounts: AccountCache,
+    posted_by: uuid.UUID | None = None,
+) -> bool:
+    """
+    Repair an existing transaction journal entry when the desired mapping,
+    entered business amount, currency, or investor classification changed.
+    """
+    entry = (
+        db.query(JournalEntry)
+        .filter(
+            JournalEntry.source_type == "transaction",
+            JournalEntry.source_id == tx.id,
+            JournalEntry.status == "posted",
+        )
+        .first()
+    )
+    if not entry:
+        return False
+
+    desired = _build_entry_for_transaction(
+        db,
+        tx,
+        rates,
+        accounts,
+        posted_by=posted_by,
+    )
+    desired_lines = sorted(desired.lines, key=lambda line: line.line_number)
+    current_lines = sorted(entry.lines, key=lambda line: line.line_number)
+
+    needs_repair = len(current_lines) != len(desired_lines)
+    if not needs_repair:
+        for current, expected in zip(current_lines, desired_lines):
+            if (
+                current.account_id != expected.account_id
+                or round(float(current.debit or 0), 4) != round(float(expected.debit or 0), 4)
+                or round(float(current.credit or 0), 4) != round(float(expected.credit or 0), 4)
+                or (current.original_currency or "").upper() != (expected.original_currency or "").upper()
+                or round(float(current.original_amount or 0), 4) != round(float(expected.original_amount or 0), 4)
+            ):
+                needs_repair = True
+                break
+    if not needs_repair:
+        return False
+
+    entry.entry_date = desired.entry_date
+    entry.reference = desired.reference
+    entry.description = desired.description
+    entry.updated_at = datetime.now(timezone.utc)
+    for line in list(current_lines):
+        db.delete(line)
+    db.flush()
+    entry.lines = []
+    for expected in desired_lines:
+        replacement = JournalLine(
+            entry_id=entry.id,
+            account_id=expected.account_id,
+            line_number=expected.line_number,
+            debit=expected.debit,
+            credit=expected.credit,
+            original_currency=expected.original_currency,
+            original_amount=expected.original_amount,
+            fx_rate=expected.fx_rate,
+            investor_id=expected.investor_id,
+            description=expected.description,
+        )
+        db.add(replacement)
+        entry.lines.append(replacement)
+    return True
+
+
+def _repair_bailout_entry_if_needed(
+    db: Session,
+    tx: Transaction,
+    rates: RateCache,
+    accounts: AccountCache,
+    posted_by: uuid.UUID | None = None,
+) -> bool:
+    """Backward-compatible wrapper kept for old tests/imports."""
+    return _repair_entry_if_needed(db, tx, rates, accounts, posted_by=posted_by)
+
+
+def _void_duplicate_transaction_entries(db: Session) -> int:
+    """
+    Keep one accounting entry per transaction and void extra posted copies.
+    This preserves audit history while preventing doubled balances.
+    """
+    entries = (
+        db.query(JournalEntry)
+        .filter(
+            JournalEntry.source_type == "transaction",
+            JournalEntry.source_id.isnot(None),
+        )
+        .order_by(JournalEntry.source_id.asc(), JournalEntry.created_at.asc())
+        .all()
+    )
+    by_source: dict[uuid.UUID, list[JournalEntry]] = defaultdict(list)
+    for entry in entries:
+        by_source[entry.source_id].append(entry)
+
+    voided = 0
+    for grouped in by_source.values():
+        if len(grouped) <= 1:
+            continue
+        posted = [entry for entry in grouped if entry.status == "posted"]
+        keep = posted[0] if posted else grouped[0]
+        for entry in grouped:
+            if entry.id == keep.id or entry.status == "void":
+                continue
+            entry.status = "void"
+            entry.updated_at = datetime.now(timezone.utc)
+            voided += 1
+    return voided
 
 
 def backfill_all_transactions(
@@ -199,10 +393,11 @@ def backfill_all_transactions(
     Retourne un résumé {posted, skipped, errors}.
     """
     # Pré-charge les ids déjà postés pour éviter N requêtes de vérification.
+    duplicates_voided = _void_duplicate_transaction_entries(db)
     posted_ids: set[uuid.UUID] = set()
     for (src_id,) in (
         db.query(JournalEntry.source_id)
-        .filter(JournalEntry.source_type == "transaction")
+        .filter(JournalEntry.source_type == "transaction", JournalEntry.status == "posted")
         .all()
     ):
         if src_id:
@@ -212,17 +407,24 @@ def backfill_all_transactions(
     accounts = AccountCache(db)
     posted = 0
     skipped = 0
+    repaired = 0
     errors: list[dict] = []
 
     # Ordre chronologique → la série des écritures est lisible telle quelle
     # dans le journal général après le backfill.
     txs = (
         db.query(Transaction)
+        .filter(Transaction.status == "active")
         .order_by(Transaction.transaction_date.asc())
         .all()
     )
     for tx in txs:
         if tx.id in posted_ids:
+            try:
+                if _repair_entry_if_needed(db, tx, rates, accounts, posted_by=posted_by):
+                    repaired += 1
+            except PostingError as e:
+                errors.append({"transaction_id": str(tx.id), "error": str(e)})
             skipped += 1
             continue
         try:
@@ -231,6 +433,12 @@ def backfill_all_transactions(
             posted += 1
         except PostingError as e:
             errors.append({"transaction_id": str(tx.id), "error": str(e)})
-    if posted:
+    if posted or repaired or duplicates_voided:
         db.commit()
-    return {"posted": posted, "skipped": skipped, "errors": errors}
+    return {
+        "posted": posted,
+        "skipped": skipped,
+        "repaired": repaired,
+        "duplicates_voided": duplicates_voided,
+        "errors": errors,
+    }

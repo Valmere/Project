@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, investors, investments, transactions, performances, reports, dashboard, messages, company, users, currency_rates, about, faq, accounting
+from app.routers import auth, investors, investments, transactions, performances, reports, dashboard, messages, company, users, currency_rates, about, faq, accounting, approvals, notifications
 
 app = FastAPI(title="Valmere & Co — Portail Investisseur", version="1.0.0")
 
@@ -27,6 +27,8 @@ app.include_router(currency_rates.router)
 app.include_router(about.router)
 app.include_router(faq.router)
 app.include_router(accounting.router)
+app.include_router(approvals.router)
+app.include_router(notifications.router)
 
 
 @app.get("/")

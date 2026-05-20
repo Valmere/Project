@@ -1,5 +1,5 @@
 """
-Module comptable — réservé aux rôles admin / analyst.
+Module comptable — réservé aux rôles admin / cashier.
 Aucune route ici n'est accessible aux investisseurs.
 
 Endpoints :
@@ -23,17 +23,18 @@ from app.database import get_db
 from app.models.user import User
 from app.models.account import Account, ACCOUNT_TYPES
 from app.models.journal_entry import JournalEntry, JournalLine
-from app.dependencies.auth import admin_or_analyst, admin_only
+from app.dependencies.auth import admin_or_cashier, admin_only
 from app.services import ledger_service
 from app.services.accounting_seed import seed_default_coa
 from app.services.accounting_posting import backfill_all_transactions, PostingError
+from app.services.currency import RateCache
 
 
 router = APIRouter(
     prefix="/api/accounting",
     tags=["accounting"],
     # Garde globale : aucune route n'est accessible aux investisseurs.
-    dependencies=[Depends(admin_or_analyst)],
+    dependencies=[Depends(admin_or_cashier)],
 )
 
 
@@ -194,7 +195,79 @@ def backfill_transactions(
 
 # ── Journal ──────────────────────────────────────────────────────────────────
 
-def _serialize_entry(e: JournalEntry) -> dict:
+def _serialize_entry(e: JournalEntry, *, rates: "RateCache | None" = None, display_currency: str | None = None) -> dict:
+    """
+    Renvoie une écriture sérialisée.
+
+    Règle d'affichage (intégrité comptable) :
+
+      - Si `display_currency` == devise d'ORIGINE de la ligne, on renvoie
+        directement `original_amount`. Le chiffre vu correspond EXACTEMENT
+        à ce qui a été saisi le jour J — aucune dépendance au taux courant.
+
+      - Si `display_currency` == HTG (devise de stockage comptable), on
+        renvoie `debit` / `credit` tels qu'ils sont en base : la valeur
+        figée par le `fx_rate` historique au moment du posting.
+
+      - Sinon (devise tierce, ex : original=USD et affichage=EUR), on doit
+        forcément triangulé via le taux COURANT HTG→devise. Le résultat
+        est marqué `is_approximate=True` pour que l'UI puisse en avertir.
+
+    Le champ `fx_rate` (taux figé au moment de la transaction) est toujours
+    renvoyé pour que l'admin voie le taux appliqué — un changement de cours
+    le lendemain ne modifie donc pas la valeur historique affichée.
+    """
+    BASE = "HTG"
+    target = (display_currency or BASE).upper()
+
+    def _line_display(l: JournalLine, raw_value: float) -> tuple[float, bool]:
+        """
+        Retourne (montant, is_approximate) pour `raw_value` (debit ou credit).
+        `raw_value` est en HTG (stockage). On l'exprime dans `target` en
+        respectant la règle d'historicité ci-dessus.
+        """
+        if not raw_value:
+            return 0.0, False
+        orig_ccy = (l.original_currency or BASE).upper()
+        # Cas 1 : on demande la devise d'origine → on a la valeur exacte
+        # stockée (original_amount), pas de conversion.
+        if target == orig_ccy and l.original_amount is not None:
+            # `original_amount` couvre toute la ligne (debit OU credit, l'autre = 0)
+            return float(l.original_amount), False
+        # Cas 2 : on demande la devise comptable HTG → la valeur stockée
+        # est déjà la bonne, figée par le taux historique.
+        if target == BASE:
+            return float(raw_value), False
+        # Cas 3 : devise tierce → triangulation via le taux courant HTG→target.
+        # Inévitablement approximatif (le cours bouge), on le signale.
+        if rates is not None:
+            return round(rates.convert(float(raw_value), BASE, target, strict=False), 4), True
+        return float(raw_value), True
+
+    line_dicts = []
+    any_approx = False
+    for l in e.lines:
+        disp_debit, ad = _line_display(l, float(l.debit or 0))
+        disp_credit, ac = _line_display(l, float(l.credit or 0))
+        any_approx = any_approx or ad or ac
+        line_dicts.append({
+            "id": str(l.id),
+            "line_number": l.line_number,
+            "account_id": str(l.account_id),
+            # Montant à afficher dans la devise demandée (historique préservé)
+            "debit": round(disp_debit, 4),
+            "credit": round(disp_credit, 4),
+            # Valeurs comptables brutes en HTG (stockage figé)
+            "debit_htg": float(l.debit or 0),
+            "credit_htg": float(l.credit or 0),
+            # Audit : devise + montant + taux du jour de la transaction
+            "original_currency": l.original_currency,
+            "original_amount": float(l.original_amount) if l.original_amount is not None else None,
+            "fx_rate": float(l.fx_rate) if l.fx_rate is not None else None,
+            "investor_id": str(l.investor_id) if l.investor_id else None,
+            "description": l.description,
+        })
+
     return {
         "id": str(e.id),
         "entry_date": str(e.entry_date),
@@ -204,21 +277,9 @@ def _serialize_entry(e: JournalEntry) -> dict:
         "posted_at": e.posted_at.isoformat() if e.posted_at else None,
         "source_type": e.source_type,
         "source_id": str(e.source_id) if e.source_id else None,
-        "lines": [
-            {
-                "id": str(l.id),
-                "line_number": l.line_number,
-                "account_id": str(l.account_id),
-                "debit": float(l.debit),
-                "credit": float(l.credit),
-                "original_currency": l.original_currency,
-                "original_amount": float(l.original_amount) if l.original_amount is not None else None,
-                "fx_rate": float(l.fx_rate) if l.fx_rate is not None else None,
-                "investor_id": str(l.investor_id) if l.investor_id else None,
-                "description": l.description,
-            }
-            for l in e.lines
-        ],
+        "currency": target,           # devise utilisée pour debit/credit
+        "is_approximate": any_approx, # vrai si une ligne a été (re)convertie via taux courant
+        "lines": line_dicts,
     }
 
 
@@ -227,8 +288,16 @@ def list_journal(
     start: date | None = None,
     end: date | None = None,
     status: str | None = None,
+    currency: str | None = None,
     db: Session = Depends(get_db),
 ):
+    """
+    Liste les écritures du journal général.
+
+    `currency` (optionnel) : devise dans laquelle convertir débits/crédits
+    pour l'affichage. Sans ce paramètre, les montants sont retournés en HTG
+    (devise de stockage comptable). Même contrat d'API que les états financiers.
+    """
     q = db.query(JournalEntry).options(selectinload(JournalEntry.lines))
     if start:
         q = q.filter(JournalEntry.entry_date >= start)
@@ -237,14 +306,18 @@ def list_journal(
     if status:
         q = q.filter(JournalEntry.status == status)
     entries = q.order_by(JournalEntry.entry_date.desc(), JournalEntry.created_at.desc()).limit(500).all()
-    return [_serialize_entry(e) for e in entries]
+
+    # Cache de taux partagé pour la sérialisation de toutes les écritures :
+    # 1 seule lecture en base au lieu de N par ligne.
+    rates = RateCache(db) if currency and currency.upper() != "HTG" else None
+    return [_serialize_entry(e, rates=rates, display_currency=currency) for e in entries]
 
 
 @router.post("/journal", status_code=201)
 def create_entry(
     body: JournalEntryCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
 ):
     if len(body.lines) < 2:
         raise HTTPException(400, "Une écriture doit avoir au moins 2 lignes")
@@ -310,7 +383,7 @@ def create_entry(
 def post_entry(
     entry_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_or_analyst),
+    current_user: User = Depends(admin_or_cashier),
 ):
     entry = db.query(JournalEntry).options(selectinload(JournalEntry.lines)).filter(JournalEntry.id == entry_id).first()
     if not entry:

@@ -1,44 +1,53 @@
-const ACCENT = {
-  primary: { dot: 'var(--color-primary)', iconBg: 'rgba(26,58,92,0.07)', iconColor: 'var(--color-primary)' },
-  secondary: { dot: 'var(--color-secondary)', iconBg: 'rgba(201,168,76,0.10)', iconColor: 'var(--color-secondary)' },
-  green: { dot: 'var(--c-success)', iconBg: 'var(--c-success-bg)', iconColor: 'var(--c-success)' },
-  red: { dot: 'var(--c-danger)', iconBg: 'var(--c-danger-bg)', iconColor: 'var(--c-danger)' },
-  warning: { dot: 'var(--c-warning)', iconBg: 'var(--c-warning-bg)', iconColor: 'var(--c-warning)' },
+function DownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="w-4 h-4">
+      <path d="M12 5v14" />
+      <path d="M6 13l6 6 6-6" />
+    </svg>
+  )
 }
 
-export default function StatCard({ title, value, sub, color = 'primary', trend, trendLabel }) {
-  const a = ACCENT[color] || ACCENT.primary
+function resolveVariant(color, variant) {
+  if (variant) return variant
+  if (color === 'secondary') return 'featured'
+  if (color === 'red') return 'risk'
+  return 'neutral'
+}
+
+export default function StatCard({ title, value, sub, color = 'primary', variant, trend, trendLabel }) {
+  const cardVariant = resolveVariant(color, variant)
   const trendPos = trend >= 0
   const showTrend = trend !== undefined && trend !== null
 
   return (
     <div
-      className="card card-hover p-5 flex flex-col gap-3"
-      style={{ borderTop: `2px solid ${a.dot}` }}
+      className={`premium-stat-card premium-stat-${cardVariant} card-hover relative overflow-hidden p-4 sm:p-5 flex flex-col gap-3`}
     >
-      <span
-        className="text-[11px] font-semibold tracking-[0.07em] uppercase leading-none"
-        style={{ color: 'var(--text-3)' }}
-      >
-        {title}
-      </span>
+      <div className="relative flex items-start justify-between gap-3">
+        <span className="premium-label premium-stat-title">
+          {title}
+        </span>
+        {cardVariant === 'featured' && <span className="premium-stat-badge">PHARE</span>}
+        {cardVariant === 'risk' && (
+          <span className="premium-stat-risk-icon" aria-hidden="true">
+            <DownIcon />
+          </span>
+        )}
+      </div>
 
-      <div
-        className="text-[22px] font-bold leading-none tracking-tight"
-        style={{ color: 'var(--text-1)' }}
-      >
+      <div className="premium-number premium-stat-value">
         {value}
       </div>
 
       {showTrend && (
-        <span className={trendPos ? 'trend-up' : 'trend-down'}>
+        <span className={`relative ${trendPos ? 'trend-up' : 'trend-down'}`}>
           {trendPos ? '↑' : '↓'} {Math.abs(trend).toFixed(1)}%
           {trendLabel && <span className="font-normal ml-0.5 opacity-75">{trendLabel}</span>}
         </span>
       )}
 
       {sub && !showTrend && (
-        <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>{sub}</span>
+        <span className="relative text-[12px]" style={{ color: 'var(--text-3)' }}>{sub}</span>
       )}
     </div>
   )

@@ -80,9 +80,134 @@ export default function FilterBar({
     })),
   ]
 
+  // Format compact d'un investisseur : on coupe à 14 chars pour le chip
+  // pour éviter qu'un nom long ne force le wrap.
+  const compactInvestorLabel = (id) => {
+    if (!id) return t('filter.all_investors')
+    const found = (investors || []).find((i) => i.id === id)
+    if (!found) return t('filter.all_investors')
+    const name = found.full_name || ''
+    return name.length > 16 ? `${name.slice(0, 14)}…` : name
+  }
+
   return (
-    <div className="card p-3 sm:p-4 mb-6">
-      <div className="flex flex-col lg:flex-row lg:items-end gap-3 flex-wrap">
+    <div className="card premium-filter-bar p-3 sm:p-4 mb-4 sm:mb-6">
+      {/* ─── Mobile : ligne compacte de chips ─────────────────────── */}
+      <div className="sm:hidden">
+        <div className="flex items-center gap-2 overflow-x-auto -mx-1 px-1 pb-1 filter-chip-row">
+          <div className="mobile-filter-chip-field">
+            <span className="mobile-filter-chip-label">{t('filter.period')}</span>
+            <Select
+              value={period}
+              onChange={onPeriodChange}
+              options={periodOptions}
+              icon={<ClockIcon />}
+              size="sm"
+              ariaLabel={t('filter.period')}
+              displayValue={t(`period.${period}`)}
+              chip
+            />
+          </div>
+          {showGranularity && (
+            <div className="mobile-filter-chip-field">
+              <span className="mobile-filter-chip-label">{t('filter.granularity')}</span>
+              <Select
+                value={granularity}
+                onChange={onGranularityChange}
+                options={granularityOptions}
+                icon={<LayersIcon />}
+                size="sm"
+                ariaLabel={t('filter.granularity')}
+                displayValue={t(`granularity.${granularity}`)}
+                chip
+              />
+            </div>
+          )}
+          {showInvestor && (
+            <div className="mobile-filter-chip-field">
+              <span className="mobile-filter-chip-label">{t('filter.investor')}</span>
+              <Select
+                value={investorId ?? null}
+                onChange={onInvestorChange}
+                options={investorOptions}
+                icon={<UserIcon />}
+                size="sm"
+                ariaLabel={t('filter.investor')}
+                displayValue={compactInvestorLabel(investorId)}
+                chip
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Custom dates : rangée séparée sous les chips */}
+        {showCustomDates && (
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {typeof onDateModeChange === 'function' && (
+              <div className="col-span-2">
+                <Select
+                  value={dateMode}
+                  onChange={(m) => {
+                    onDateModeChange(m)
+                    if (m === 'single' && startDate) onEndDateChange(startDate)
+                  }}
+                  options={dateModeOptions}
+                  size="sm"
+                  fullWidth
+                  ariaLabel={t('filter.date_mode')}
+                />
+              </div>
+            )}
+            {isSingle ? (
+              <div className="col-span-2 relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none">
+                  <CalendarIcon />
+                </span>
+                <input
+                  type="date"
+                  aria-label={t('filter.on_date')}
+                  value={startDate || ''}
+                  onChange={(e) => {
+                    onStartDateChange(e.target.value)
+                    onEndDateChange(e.target.value)
+                  }}
+                  className="input input-sm pl-9 h-9 w-full"
+                />
+              </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none">
+                    <CalendarIcon />
+                  </span>
+                  <input
+                    type="date"
+                    aria-label={t('filter.from')}
+                    value={startDate || ''}
+                    onChange={(e) => onStartDateChange(e.target.value)}
+                    className="input input-sm pl-9 h-9 w-full"
+                  />
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)] pointer-events-none">
+                    <CalendarIcon />
+                  </span>
+                  <input
+                    type="date"
+                    aria-label={t('filter.to')}
+                    value={endDate || ''}
+                    onChange={(e) => onEndDateChange(e.target.value)}
+                    className="input input-sm pl-9 h-9 w-full"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Desktop / tablette : layout étalé (inchangé) ───────── */}
+      <div className="hidden sm:flex flex-col lg:flex-row lg:items-end gap-3 flex-wrap">
         <div className="w-full sm:w-auto">
           <Select
             label={t('filter.period')}

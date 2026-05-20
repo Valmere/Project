@@ -13,3 +13,4 @@ from app.models.about_page import AboutPage
 from app.models.faq_item import FaqItem
 from app.models.account import Account
 from app.models.journal_entry import JournalEntry, JournalLine
+from app.models.pending_action import PendingAction

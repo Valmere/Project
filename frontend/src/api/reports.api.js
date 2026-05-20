@@ -1,6 +1,9 @@
 import api from './axios'
 
 export const generateReport = (data) => api.post('/reports/generate', data).then(r => r.data)
+export const previewReport = (data) => api.post('/reports/preview', data).then(r => r.data)
+export const scheduleReport = (data) => api.post('/reports/schedule', data).then(r => r.data)
+export const publishReport = (data) => api.post('/reports/publish', data).then(r => r.data)
 export const getReportDownloadUrl = (id) => api.get(`/reports/${id}/download`).then(r => r.data)
 export const getInvestorReports = (investorId) =>
   api.get(`/investors/${investorId}/reports`).then(r => r.data)

@@ -229,7 +229,7 @@ def reply_message(
     if not msg:
         raise HTTPException(404, "Message introuvable")
 
-    is_admin = current_user.role in ("admin", "analyst")
+    is_admin = current_user.role in ("admin", "cashier")
     if msg.direction == "in" and not is_admin:
         raise HTTPException(403, "Seul un administrateur peut répondre à ce message")
     if msg.direction == "out":

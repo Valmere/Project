@@ -9,7 +9,9 @@ Comptes-clés pour Valmere :
   • 421  : comptes investisseurs (passif — ce que l'entreprise leur doit)
   • 706  : revenus de gestion / commissions
   • 766  : gains financiers sur placements
+  • 767  : gains financiers investisseurs
   • 666  : pertes financières sur placements
+  • 667  : pertes financières investisseurs
 """
 from sqlalchemy.orm import Session
 from app.models.account import Account
@@ -54,12 +56,14 @@ DEFAULT_COA: list[tuple[str, str, str, bool, str | None]] = [
     ("621",  "Personnel",                    "expense",   True,  "6"),
     ("627",  "Services bancaires",           "expense",   True,  "6"),
     ("666",  "Pertes financières",           "expense",   True,  "6"),
+    ("667",  "Pertes financières investisseurs", "expense", True, "6"),
     ("668",  "Pertes de change",             "expense",   True,  "6"),
 
     # ── 7. PRODUITS ────────────────────────────────────────────────────────
     ("7",    "Produits",                     "revenue",   False, None),
     ("706",  "Commissions de gestion",       "revenue",   True,  "7"),
     ("766",  "Gains financiers",             "revenue",   True,  "7"),
+    ("767",  "Gains financiers investisseurs", "revenue", True,  "7"),
     ("768",  "Gains de change",              "revenue",   True,  "7"),
 ]
 

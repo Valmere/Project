@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { getInvestorDashboard } from '../../api/dashboard.api'
 import StatCard from '../../components/ui/StatCard'
 import FilterBar from '../../components/ui/FilterBar'
+import RoiValue from '../../components/ui/RoiValue'
 import ROILineChart from '../../components/charts/ROILineChart'
 import CapitalBarChart from '../../components/charts/CapitalBarChart'
 import { usePrefsStore, useT } from '../../store/prefs.store'
@@ -22,11 +23,11 @@ function SkeletonCard() {
 function PnlCard({ label, value, periodLabel, currency, lang }) {
   const isPos = value >= 0
   return (
-    <div className="card card-hover p-4 sm:p-5">
-      <div className="text-[11px] font-semibold tracking-[0.07em] uppercase mb-3" style={{ color: 'var(--text-3)' }}>
+    <div className="premium-stat-card premium-stat-neutral card-hover p-4 sm:p-5">
+      <div className="premium-label premium-stat-title mb-3">
         {label}
       </div>
-      <div className="text-[18px] sm:text-[20px] font-bold leading-none tracking-tight mb-2 break-all" style={{ color: 'var(--text-1)' }}>
+      <div className="premium-number premium-stat-value premium-stat-danger-value mb-2 break-all">
         {formatMoney(value, { currency, lang, sign: true })}
       </div>
       <span className={isPos ? 'trend-up' : 'trend-down'}>
@@ -101,18 +102,33 @@ export default function InvestorDashboard() {
   const rawPnl = useMemo(() => pickPnl(data, period), [data, period])
   const baseCcy = data?.base_currency || 'HTG'
   const currentPnl = convert(rawPnl, baseCcy, currency)
-  const displayInitial = data ? convert(data.total_initial_capital || 0, baseCcy, currency) : 0
+  // Capital investi : utilise total_invested (∑ dépôts − ∑ retraits) si dispo,
+  // retombe sur total_initial_capital pour les déploiements anciens.
+  const investedRaw = data ? (data.total_invested ?? data.total_initial_capital ?? 0) : 0
+  const displayInvested = convert(investedRaw, baseCcy, currency)
   const displayCurrent = data ? convert(data.total_current_value || 0, baseCcy, currency) : 0
   const displayGain = data ? convert(data.total_gain || 0, baseCcy, currency) : 0
+  // ROI = bénéfice / valeur actuelle (cohérent avec le relevé).
+  const roiPct = data?.roi_pct
   const periodLabel =
     period === 'custom' && data?.window
       ? formatRange(data.window.start, data.window.end, lang)
       : t(`period.${period}`)
   const currencyCode = getCurrencyMeta(currency).code
+
+  // chart_data est renvoyé en HTG par le backend ; on convertit chaque
+  // point dans la devise d'affichage pour rester cohérent avec les tuiles.
+  const chartData = useMemo(() => {
+    if (!data?.chart_data) return []
+    return data.chart_data.map(p => ({
+      ...p,
+      closing_value: convert(p.closing_value, baseCcy, currency),
+    }))
+  }, [data?.chart_data, baseCcy, currency, convert])
   const ratesMissing = data?.rates_missing || []
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto">
+    <div className="premium-dashboard p-3 sm:p-5 lg:p-6 max-w-[1440px] mx-auto">
 
       {ratesMissing.length > 0 && (
         <div
@@ -146,40 +162,48 @@ export default function InvestorDashboard() {
         onEndDateChange={setEndDate}
       />
 
-      <h2 className="text-[11px] font-semibold tracking-[0.07em] uppercase mb-3" style={{ color: 'var(--text-3)' }}>
+      <h2 className="premium-section-title mb-3">
         {t('dashboard.portfolio_summary')}
       </h2>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+      <div className="premium-kpi-grid grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         {loading ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
           <>
-            <StatCard title={t('kpi.invested_capital')} value={formatMoney(displayInitial, { currency, lang })} color="primary" />
-            <StatCard title={t('kpi.current_value')} value={formatMoney(displayCurrent, { currency, lang })} color="secondary" />
+            {/* Mêmes 4 tuiles que le relevé : Capital investi / Valeur
+                actuelle / Gain ou Perte / Rendement (ROI). Cohérent à
+                travers toutes les vues investisseur. */}
+            <StatCard title={t('kpi.invested_capital')} value={formatMoney(displayInvested, { currency, lang })} color="primary" variant="neutral" />
+            <StatCard title={t('kpi.current_value')} value={formatMoney(displayCurrent, { currency, lang })} color="secondary" variant="featured" />
             <StatCard
               title={t('kpi.total_gain')}
               value={formatMoney(displayGain, { currency, lang, sign: true })}
-              color={displayGain >= 0 ? 'green' : 'red'}
+              color={displayGain >= 0 ? 'primary' : 'red'}
+              variant={displayGain >= 0 ? 'neutral' : 'risk'}
             />
-            <PnlCard
-              label={t('kpi.pnl_period', { period: periodLabel })}
-              value={currentPnl}
-              periodLabel={periodLabel}
-              currency={currency}
-              lang={lang}
+            <StatCard
+              title={t('kpi.roi')}
+              value={<RoiValue value={roiPct} unavailable={data.roi_unavailable} lang={lang} />}
+              color={data.roi_unavailable ? 'red' : (roiPct >= 0 ? 'green' : 'red')}
+              variant={data.roi_unavailable || roiPct < 0 ? 'risk' : 'neutral'}
             />
           </>
         )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
-        <div className="card p-4 sm:p-6">
+      {/* Note : on n'affiche plus de tuile « Résultat période » distincte.
+          C'était redondant avec Gain/Perte (les deux mesurent le P&L) et
+          ça surchargeait la vue. La fenêtre du filtre période impacte
+          déjà directement la tuile Gain/Perte et le graphique ROI. */}
+
+      <div className="premium-chart-grid grid grid-cols-1 min-[901px]:grid-cols-2 gap-4 sm:gap-6">
+        <div className="card wealth-chart-card p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4 sm:mb-5">
             <div>
-              <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-1)' }}>{t('dashboard.roi_evolution')}</h3>
+              <h3 className="premium-chart-title">{t('dashboard.roi_evolution')}</h3>
               <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-3)' }}>{periodLabel}</p>
             </div>
-            <span className="badge badge-success">%</span>
+            <span className="premium-chart-pill">%</span>
           </div>
           {loading
             ? <div className="skeleton h-44 w-full rounded-lg" />
@@ -187,17 +211,17 @@ export default function InvestorDashboard() {
           }
         </div>
 
-        <div className="card p-4 sm:p-6">
+        <div className="card wealth-chart-card p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4 sm:mb-5">
             <div>
-              <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-1)' }}>{t('dashboard.capital_evolution')}</h3>
+              <h3 className="premium-chart-title">{t('dashboard.capital_evolution')}</h3>
               <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-3)' }}>{t('dashboard.capital_subtitle')}</p>
             </div>
-            <span className="badge badge-gold">{currencyCode}</span>
+            <span className="premium-chart-pill">{currencyCode}</span>
           </div>
           {loading
             ? <div className="skeleton h-44 w-full rounded-lg" />
-            : (data.chart_data?.length > 0 ? <CapitalBarChart data={data.chart_data} /> : <EmptyChart t={t} />)
+            : (chartData.length > 0 ? <CapitalBarChart data={chartData} /> : <EmptyChart t={t} />)
           }
         </div>
       </div>

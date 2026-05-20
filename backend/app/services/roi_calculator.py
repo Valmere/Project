@@ -25,7 +25,33 @@ def compute_pnl(opening_value: float, closing_value: float) -> float:
     return round(closing_value - opening_value, 4)
 
 
-SIGN_MAP = {"deposit": 1, "gain": 1, "withdrawal": -1, "loss": -1, "fee": -1}
+def roi_is_unavailable(pnl: float, current_value: float) -> bool:
+    """ROI is misleading when both P&L and current value are negative."""
+    return pnl < 0 and current_value < 0
+
+
+def compute_roi_from_pnl(pnl: float, current_value: float) -> float | None:
+    if roi_is_unavailable(pnl, current_value):
+        return None
+    if not current_value:
+        return 0.0
+    return round((pnl / current_value) * 100, 4)
+
+
+SIGN_MAP = {
+    "deposit": 1,
+    "gain": 1,
+    "withdrawal": -1,
+    "loss": -1,
+    "fee": -1,
+    # Prélèvement société : diminue le solde de Valmere & Co (comme un retrait).
+    "company_withdrawal": -1,
+    # Renflouement investisseur : ajoute le delta nécessaire pour atteindre
+    # la VA cible. Le backend a déjà calculé delta avant insertion → +1.
+    "bailout": 1,
+    # Renflouement société : crédite le solde Valmere & Co.
+    "company_bailout": 1,
+}
 
 
 def apply_transaction_to_value(current_value: float, tx_type: str, amount: float) -> float:

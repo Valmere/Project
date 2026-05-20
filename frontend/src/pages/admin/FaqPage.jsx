@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { listFaq, createFaq, updateFaq, deleteFaq } from '../../api/faq.api'
+import { usePrefsStore, useT } from '../../store/prefs.store'
 
 function FaqRow({ item, onSave, onDelete }) {
+  const t = useT()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({
     question: item.question,
@@ -36,7 +38,7 @@ function FaqRow({ item, onSave, onDelete }) {
       <div className="bg-white rounded-xl shadow-sm p-4 border-2 border-[var(--color-primary)]/30">
         <div className="space-y-3">
           <div>
-            <label className="block text-[11px] text-slate-500 mb-1">Question</label>
+            <label className="block text-[11px] text-slate-500 mb-1">{t('faq.admin.question')}</label>
             <input
               value={draft.question}
               onChange={e => setDraft(p => ({ ...p, question: e.target.value }))}
@@ -44,7 +46,7 @@ function FaqRow({ item, onSave, onDelete }) {
             />
           </div>
           <div>
-            <label className="block text-[11px] text-slate-500 mb-1">Réponse</label>
+            <label className="block text-[11px] text-slate-500 mb-1">{t('faq.admin.answer')}</label>
             <textarea
               value={draft.answer}
               onChange={e => setDraft(p => ({ ...p, answer: e.target.value }))}
@@ -52,18 +54,18 @@ function FaqRow({ item, onSave, onDelete }) {
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] text-slate-500 mb-1">Catégorie</label>
+              <label className="block text-[11px] text-slate-500 mb-1">{t('faq.admin.category')}</label>
               <input
                 value={draft.category}
                 onChange={e => setDraft(p => ({ ...p, category: e.target.value }))}
-                placeholder="Général, Compte, Investissement…"
+                placeholder={t('faq.admin.category_placeholder')}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-500 mb-1">Ordre</label>
+              <label className="block text-[11px] text-slate-500 mb-1">{t('faq.admin.order')}</label>
               <input
                 type="number"
                 value={draft.sort_order}
@@ -78,14 +80,14 @@ function FaqRow({ item, onSave, onDelete }) {
               checked={draft.is_published}
               onChange={e => setDraft(p => ({ ...p, is_published: e.target.checked }))}
             />
-            Publié (visible par les investisseurs)
+            {t('faq.admin.published_visible')}
           </label>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-col sm:flex-row sm:justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => setEditing(false)}
               className="text-sm px-3 py-1.5 text-slate-500 hover:text-slate-700"
-            >Annuler</button>
+            >{t('common.cancel')}</button>
             <button
               type="button"
               onClick={save}
@@ -93,7 +95,7 @@ function FaqRow({ item, onSave, onDelete }) {
               className="text-sm px-4 py-1.5 rounded-lg text-white disabled:opacity-60"
               style={{ backgroundColor: 'var(--color-primary)' }}
             >
-              {busy ? 'Enregistrement…' : 'Enregistrer'}
+              {busy ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </div>
@@ -103,7 +105,7 @@ function FaqRow({ item, onSave, onDelete }) {
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-4">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap mb-1">
             {item.category && (
@@ -112,32 +114,32 @@ function FaqRow({ item, onSave, onDelete }) {
               </span>
             )}
             {item.is_published ? (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">Publié</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">{t('faq.admin.published')}</span>
             ) : (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-500 border border-slate-200">Brouillon</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-500 border border-slate-200">{t('faq.admin.draft')}</span>
             )}
             <span className="text-[10px] text-slate-400">#{item.sort_order ?? 0}</span>
           </div>
           <h4 className="font-semibold text-slate-800 text-sm">{item.question}</h4>
           <p className="text-sm text-slate-600 mt-1 whitespace-pre-wrap">{item.answer}</p>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1 flex-wrap sm:flex-shrink-0">
           <button
             onClick={togglePublish}
             disabled={busy}
             className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-            title={item.is_published ? 'Dépublier' : 'Publier'}
+            title={item.is_published ? t('faq.admin.unpublish') : t('faq.admin.publish')}
           >
-            {item.is_published ? 'Masquer' : 'Publier'}
+            {item.is_published ? t('faq.admin.hide') : t('faq.admin.publish')}
           </button>
           <button
             onClick={() => setEditing(true)}
             className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-          >Modifier</button>
+          >{t('users.edit')}</button>
           <button
             onClick={() => onDelete(item.id)}
             className="text-xs px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
-          >Supprimer</button>
+          >{t('common.delete')}</button>
         </div>
       </div>
     </div>
@@ -145,6 +147,8 @@ function FaqRow({ item, onSave, onDelete }) {
 }
 
 export default function FaqPage() {
+  const t = useT()
+  const { lang } = usePrefsStore()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
@@ -157,11 +161,11 @@ export default function FaqPage() {
   const reload = () =>
     listFaq()
       .then(list => { setItems(list); setErr('') })
-      .catch(e => setErr(e?.response?.data?.detail || 'Impossible de charger la FAQ'))
+      .catch(e => setErr(e?.response?.data?.detail || t('faq.error_load')))
 
   useEffect(() => {
     reload().finally(() => setLoading(false))
-  }, [])
+  }, [lang])
 
   const handleCreate = async (e) => {
     e.preventDefault()
@@ -173,7 +177,7 @@ export default function FaqPage() {
       setDraft({ question: '', answer: '', category: '', sort_order: 0, is_published: true })
       setAdding(false)
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'Erreur lors de la création')
+      setErr(e?.response?.data?.detail || t('faq.admin.error_create'))
     } finally {
       setBusy(false)
     }
@@ -186,26 +190,26 @@ export default function FaqPage() {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('Supprimer cette entrée FAQ ?')) return
+    if (!confirm(t('faq.admin.confirm_delete'))) return
     try {
       await deleteFaq(id)
       setItems(prev => prev.filter(it => it.id !== id))
     } catch (e) {
-      setErr(e?.response?.data?.detail || 'Erreur lors de la suppression')
+      setErr(e?.response?.data?.detail || t('faq.admin.error_delete'))
     }
   }
 
   if (loading) {
-    return <div className="p-8 text-sm text-slate-500">Chargement…</div>
+    return <div className="p-8 text-sm text-slate-500">{t('common.loading')}</div>
   }
 
   return (
     <div className="p-4 md:p-8 max-w-4xl">
       <div className="flex items-center justify-between mb-4 md:mb-6 gap-3 flex-wrap">
         <div>
-          <h2 className="text-lg md:text-xl font-bold text-slate-800">FAQ — Gestion</h2>
+          <h2 className="text-lg md:text-xl font-bold text-slate-800">{t('faq.admin.title')}</h2>
           <p className="text-sm text-slate-500 mt-1">
-            Questions fréquemment posées par les investisseurs. Seules les entrées « publiées » sont visibles.
+            {t('faq.admin.subtitle')}
           </p>
         </div>
         <button
@@ -213,7 +217,7 @@ export default function FaqPage() {
           className="px-3 md:px-4 py-2 rounded-lg text-white text-sm font-medium"
           style={{ backgroundColor: 'var(--color-primary)' }}
         >
-          {adding ? 'Fermer' : '+ Nouvelle question'}
+          {adding ? t('common.close') : t('faq.admin.new')}
         </button>
       </div>
 
@@ -225,9 +229,9 @@ export default function FaqPage() {
 
       {adding && (
         <form onSubmit={handleCreate} className="bg-white rounded-xl shadow-sm p-4 md:p-5 mb-5 space-y-3 border-2 border-[var(--color-primary)]/30">
-          <h3 className="font-semibold text-slate-700 text-sm">Nouvelle entrée FAQ</h3>
+          <h3 className="font-semibold text-slate-700 text-sm">{t('faq.admin.new_entry')}</h3>
           <div>
-            <label className="block text-[11px] text-slate-500 mb-1">Question *</label>
+            <label className="block text-[11px] text-slate-500 mb-1">{t('faq.admin.question')} *</label>
             <input
               value={draft.question}
               onChange={e => setDraft(p => ({ ...p, question: e.target.value }))}
@@ -236,7 +240,7 @@ export default function FaqPage() {
             />
           </div>
           <div>
-            <label className="block text-[11px] text-slate-500 mb-1">Réponse *</label>
+            <label className="block text-[11px] text-slate-500 mb-1">{t('faq.admin.answer')} *</label>
             <textarea
               value={draft.answer}
               onChange={e => setDraft(p => ({ ...p, answer: e.target.value }))}
@@ -245,18 +249,18 @@ export default function FaqPage() {
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] text-slate-500 mb-1">Catégorie</label>
+              <label className="block text-[11px] text-slate-500 mb-1">{t('faq.admin.category')}</label>
               <input
                 value={draft.category}
                 onChange={e => setDraft(p => ({ ...p, category: e.target.value }))}
-                placeholder="Général, Compte, Investissement…"
+                placeholder={t('faq.admin.category_placeholder')}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-500 mb-1">Ordre d'affichage</label>
+              <label className="block text-[11px] text-slate-500 mb-1">{t('faq.admin.display_order')}</label>
               <input
                 type="number"
                 value={draft.sort_order}
@@ -271,21 +275,21 @@ export default function FaqPage() {
               checked={draft.is_published}
               onChange={e => setDraft(p => ({ ...p, is_published: e.target.checked }))}
             />
-            Publier immédiatement
+            {t('faq.admin.publish_now')}
           </label>
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-col sm:flex-row sm:justify-end gap-2">
             <button
               type="button"
               onClick={() => setAdding(false)}
               className="px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700"
-            >Annuler</button>
+            >{t('common.cancel')}</button>
             <button
               type="submit"
               disabled={busy}
               className="px-4 py-1.5 rounded-lg text-white text-sm disabled:opacity-60"
               style={{ backgroundColor: 'var(--color-primary)' }}
             >
-              {busy ? 'Création…' : 'Créer'}
+              {busy ? t('faq.admin.creating') : t('coa.create')}
             </button>
           </div>
         </form>
@@ -294,7 +298,7 @@ export default function FaqPage() {
       <div className="space-y-3">
         {items.length === 0 && (
           <div className="bg-white rounded-xl shadow-sm p-8 text-center text-sm text-slate-400">
-            Aucune entrée FAQ. Cliquez sur « + Nouvelle question » pour commencer.
+            {t('faq.admin.empty')}
           </div>
         )}
         {items.map(item => (
