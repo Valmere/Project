@@ -27,6 +27,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ─── 0. Récupère le contenu du repo (pour accéder à backup_storage.py)
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
       # ─── 1. Détermine le mode (daily / weekly / monthly) ─────────────
       - name: Détermine le mode de sauvegarde
         id: mode
