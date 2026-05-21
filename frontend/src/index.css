@@ -668,8 +668,10 @@ table tbody tr:hover {
   }
 
   .mobile-safe-area {
-    /* Hauteur de la bottom nav (64px) + safe-area iOS + marge respirante */
-    padding-bottom: calc(76px + env(safe-area-inset-bottom));
+    /* Hauteur de la bottom nav (64px de min-height + padding interne) +
+       safe-area iOS pour la barre home. La nav étant collée au bas
+       (et plus en pilule flottante), on évite que le contenu passe dessous. */
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
   }
 
   /* Anti-débordement : aucun enfant direct de main ne doit pouvoir
@@ -829,26 +831,26 @@ table tbody tr:hover {
   }
 
   /* ─── Bottom nav repensée : 4 onglets, plus respirable, plus pro ─── */
+  /* Bottom nav style WhatsApp/iOS : ancrée au bas, pleine largeur, opaque.
+     Plus de "pilule flottante" — la barre touche les bords et le bas, et
+     masque complètement le contenu qui scrolle dessous. */
   .mobile-bottom-nav {
     position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 0;
+    right: 0;
+    bottom: 0;
     z-index: 45;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     align-items: stretch;
     min-height: 64px;
-    padding: 8px;
-    border-radius: 24px;
-    background: rgba(255,255,255,0.96);
-    border: 1px solid rgba(26,39,64,0.06);
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom)) 8px;
+    border-radius: 0;
+    background: #FFFFFF;
+    border-top: 1px solid rgba(26,39,64,0.10);
     box-shadow:
-      0 1px 0 rgba(255,255,255,0.7) inset,
-      0 18px 44px -12px rgba(26,39,64,0.22),
-      0 4px 12px -4px rgba(26,39,64,0.08);
-    backdrop-filter: saturate(180%) blur(20px);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
+      0 -2px 12px -4px rgba(26,39,64,0.10),
+      0 -1px 0 rgba(255,255,255,0.6) inset;
   }
 
   .mobile-tab {
@@ -897,11 +899,11 @@ table tbody tr:hover {
   }
 
   [data-theme="dark"] .mobile-bottom-nav {
-    background: rgba(18,28,46,0.92);
-    border-color: rgba(148,163,184,0.14);
+    background: #0F1A2A;
+    border-top-color: rgba(148,163,184,0.16);
     box-shadow:
-      0 1px 0 rgba(255,255,255,0.04) inset,
-      0 18px 44px -10px rgba(0,0,0,0.55);
+      0 -2px 12px -4px rgba(0,0,0,0.45),
+      0 -1px 0 rgba(255,255,255,0.04) inset;
   }
 
   [data-theme="dark"] .mobile-tab {
@@ -1116,10 +1118,7 @@ table tbody tr:hover {
 }
 
 [data-theme="dark"] .premium-filter-bar,
-[data-theme="dark"] .mobile-bottom-nav {
-  background: rgba(15,26,42,0.90);
-  border-color: var(--border-subtle);
-}
+/* (dark mode style de la bottom nav géré dans la media-query mobile plus haut) */
 
 [data-theme="dark"] .premium-chart-pill {
   background: rgba(201,162,73,0.12);
