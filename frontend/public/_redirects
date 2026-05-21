@@ -1,0 +1,4 @@
+# Single Page Application : pour toute route inconnue côté serveur,
+# on sert index.html et on laisse React Router faire son travail.
+# Sans ça, un refresh sur /admin/investors renvoie un 404 Netlify.
+/*    /index.html   200
