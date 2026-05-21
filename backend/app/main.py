@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,9 +7,17 @@ from app.routers import auth, investors, investments, transactions, performances
 
 app = FastAPI(title="Valmere & Co — Portail Investisseur", version="1.0.0")
 
+# Lecture des origines CORS depuis l'environnement.
+#   - En production (Render) : CORS_ORIGINS=https://valmere-co.netlify.app
+#   - En local : on retombe sur localhost:5173 / 3000 par défaut.
+# Plusieurs origines possibles : séparateur virgule. Espaces tolérés.
+_default_origins = "http://localhost:5173,http://localhost:3000"
+_cors_env = os.getenv("CORS_ORIGINS", _default_origins)
+allow_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
