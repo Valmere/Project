@@ -41,6 +41,15 @@ app.include_router(approvals.router)
 app.include_router(notifications.router)
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
+    # Accepte GET et HEAD pour que les services de monitoring (UptimeRobot,
+    # Render health check, etc.) qui pingent en HEAD ne reçoivent pas 405.
     return {"message": "Valmere & Co API — en ligne"}
+
+
+@app.api_route("/health", methods=["GET", "HEAD"])
+def health():
+    # Endpoint dédié au monitoring : léger, sans accès DB.
+    # À utiliser dans UptimeRobot comme URL surveillée.
+    return {"status": "ok"}
