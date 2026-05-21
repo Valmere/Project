@@ -217,9 +217,12 @@ def webauthn_register_complete(
         raise HTTPException(status_code=400, detail="Challenge expiré, recommencez")
 
     try:
+        # webauthn 2.x : verify_registration_response accepte directement
+        # la string JSON. Les helpers parse_* ont été déplacés dans le
+        # sous-module webauthn.helpers, donc plus besoin de pré-parser.
         credential_str = json.dumps(body.credential)
         verification = webauthn.verify_registration_response(
-            credential=webauthn.parse_registration_credential_json(credential_str),
+            credential=credential_str,
             expected_challenge=challenge,
             expected_rp_id=settings.WEBAUTHN_RP_ID,
             expected_origin=settings.WEBAUTHN_ORIGIN,
@@ -268,8 +271,10 @@ def webauthn_login_complete(body: WebAuthnLoginCompleteRequest, db: Session = De
     if not challenge:
         raise HTTPException(status_code=400, detail="Challenge expiré, recommencez")
 
+    # On parse via le helper du sous-module pour accéder à raw_id
+    # (nécessaire pour retrouver le credential en base avant verify).
     credential_str = json.dumps(body.credential)
-    parsed = webauthn.parse_authentication_credential_json(credential_str)
+    parsed = webauthn.helpers.parse_authentication_credential_json(credential_str)
 
     cred = db.query(WebAuthnCredential).filter(
         WebAuthnCredential.user_id == user.id,
