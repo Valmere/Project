@@ -1,6 +1,11 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api' })
+// En production (Netlify), VITE_API_URL pointe vers le backend Render
+// (ex: https://valmere-api.onrender.com/api).
+// En dev local, on garde '/api' qui est proxifié par Vite vers localhost:8000
+// (cf. vite.config.js → server.proxy).
+const apiBase = import.meta.env.VITE_API_URL || '/api'
+const api = axios.create({ baseURL: apiBase })
 
 api.interceptors.request.use((config) => {
   const auth = JSON.parse(localStorage.getItem('valmere-auth') || '{}')
