@@ -17,6 +17,9 @@ build/
 .env.backup*
 .env.bak
 *.env.backup
+# Fichiers de config locale (backup_valmere.py, etc.)
+backup.env
+**/backup.env
 
 # ─── Database dumps & backups ────────────────────────────
 # Contiennent des données réelles : ne JAMAIS committer
