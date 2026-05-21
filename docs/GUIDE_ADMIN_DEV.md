@@ -122,6 +122,8 @@ C'est tout. Pas de FTP, pas de configuration manuelle de serveur, pas de redéma
 
 Si le build échoue (par exemple, une erreur de syntaxe Python ou une dépendance manquante), le service tourne toujours sur l'ancienne version. Vous ne risquez pas de casser la production en poussant une erreur : la plateforme continuera de fonctionner sur le dernier déploiement réussi pendant que vous corrigez votre code et que vous repoussez.
 
+Pour toute opération qui touche les mots de passe, les clés d'API, le nom de domaine ou tout autre paramètre sensible de la plateforme, **consultez impérativement le document `OPERATIONS_SENSIBLES.md`** dans ce même dossier `docs/`. Il décrit pas à pas ce qui doit être mis à jour en parallèle dans chacun de ces cas, et comment vérifier ensuite que tout fonctionne encore.
+
 ---
 
 ## 9. Les bases de données et leurs sauvegardes

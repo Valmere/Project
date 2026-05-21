@@ -1,10 +1,16 @@
 # Documents officiels — Valmere & Co
 
-Ce dossier contient les deux documents écrits qui accompagnent la plateforme. Ils sont rédigés en français, lisibles d'une traite, et destinés à des publics différents.
+Ce dossier contient les trois documents écrits qui accompagnent la plateforme. Ils sont rédigés en français, lisibles d'une traite, et destinés à des publics et à des moments d'utilisation différents.
 
 ## Guide technique (`GUIDE_ADMIN_DEV.md`)
 
-Ce document s'adresse à l'administrateur principal et à toute personne qui sera amenée à intervenir sur la plateforme. Il décrit l'architecture, les services hébergés, les rôles, le fonctionnement des opérations financières et comptables, la sécurité, le déploiement, le monitoring, les sauvegardes, les coûts, et les procédures à suivre quand quelque chose ne fonctionne pas. C'est un document de transfert : il suppose une culture informatique générale mais ne demande pas d'avoir déjà travaillé sur ce projet.
+Ce document s'adresse à l'administrateur principal et à toute personne qui sera amenée à intervenir sur la plateforme. Il décrit l'architecture, les services hébergés, les rôles, le fonctionnement des opérations financières et comptables, la sécurité, le déploiement, le monitoring, les sauvegardes, les coûts, et les procédures à suivre quand quelque chose ne fonctionne pas. C'est un document de transfert : il suppose une culture informatique générale mais ne demande pas d'avoir déjà travaillé sur ce projet. Il se lit d'une traite à la prise en main, puis se consulte ponctuellement comme une référence.
+
+## Manuel des opérations sensibles (`OPERATIONS_SENSIBLES.md`)
+
+Ce document est un complément du guide technique, orienté action plutôt que compréhension. Il décrit, pour chaque opération de maintenance susceptible de casser une partie de la plateforme si elle est faite à moitié, la procédure pas à pas à suivre : ce qu'il faut mettre à jour en parallèle, dans quel ordre, comment vérifier que tout fonctionne ensuite, et comment annuler proprement en cas de problème.
+
+Il couvre notamment le changement du mot de passe de la base de données, la régénération des clés d'API, le changement de nom de domaine, le déploiement d'une mise à jour du code, le rollback d'un déploiement défaillant, et la restauration d'une sauvegarde après un incident. C'est le document qu'on consulte juste avant de faire une opération sensible, pour s'éviter des heures de réparation.
 
 ## Guide investisseur (`GUIDE_INVESTISSEUR.md`)
 
@@ -12,7 +18,7 @@ Ce document est destiné à être remis à chaque nouvel investisseur **avant** 
 
 ## Convertir en PDF
 
-Les deux documents sont en Markdown, ce qui les rend faciles à lire directement sur GitHub. Pour les transmettre sous forme de PDF, plusieurs solutions existent :
+Les documents sont en Markdown, ce qui les rend faciles à lire directement sur GitHub. Pour les transmettre sous forme de PDF, plusieurs solutions existent :
 
 - Ouvrir le fichier directement sur GitHub (le rendu y est propre) et utiliser la fonction « Imprimer en PDF » du navigateur. C'est l'option la plus simple et le résultat est très lisible.
 - Utiliser un convertisseur en ligne comme `md-to-pdf.fly.dev` en copiant-collant le contenu.
