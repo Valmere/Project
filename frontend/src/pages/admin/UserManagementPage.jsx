@@ -185,8 +185,17 @@ export default function UserManagementPage() {
           </div>
           <div>
             <label className="block text-xs text-slate-500 mb-1">{t('users.username_required')}</label>
-            <input value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))} required
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+            <input
+              value={form.username}
+              onChange={e => setForm(p => ({ ...p, username: e.target.value.toLowerCase() }))}
+              required
+              minLength={3}
+              maxLength={40}
+              pattern="[a-z0-9._-]{3,40}"
+              placeholder="ex: jean.dupont ou jdupont42"
+              title="3 à 40 caractères : lettres minuscules, chiffres, point, tiret ou underscore. Pas d'@ ni d'espace."
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] invalid:border-red-300"
+            />
             <p className="text-xs text-slate-400 mt-1">{t('users.username_hint')}</p>
           </div>
           <div>
@@ -341,8 +350,10 @@ export default function UserManagementPage() {
                   {editingId === user.id ? (
                     <input
                       value={editForm.username}
-                      onChange={e => setEditForm(p => ({ ...p, username: e.target.value }))}
-                      className="w-36 border border-slate-200 rounded-md px-2 py-1 text-xs"
+                      onChange={e => setEditForm(p => ({ ...p, username: e.target.value.toLowerCase() }))}
+                      pattern="[a-z0-9._-]{3,40}"
+                      title="3 à 40 caractères : lettres minuscules, chiffres, point, tiret ou underscore."
+                      className="w-36 border border-slate-200 rounded-md px-2 py-1 text-xs invalid:border-red-300"
                     />
                   ) : (user.username || '—')}
                 </td>

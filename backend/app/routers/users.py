@@ -145,13 +145,23 @@ def create_user(
         raise HTTPException(400, f"Rôle invalide. Valeurs acceptées : {', '.join(VALID_ROLES)}")
     if len(body.password) < 8:
         raise HTTPException(400, "Le mot de passe doit contenir au moins 8 caractères")
+    if not body.email or not body.email.strip():
+        raise HTTPException(400, "L'email est requis")
+    if not body.full_name or not body.full_name.strip():
+        raise HTTPException(400, "Le nom complet est requis")
     email = body.email.strip().lower()
     existing = _user_by_email(db, email)
     if existing:
         raise HTTPException(409, "Un compte avec cet email existe déjà")
 
     # Caissier : mise en file d'attente, l'admin valide la création.
-    username = make_unique_username(db, body.username, email, body.full_name)
+    # make_unique_username peut lever ValueError si l'identifiant fourni
+    # contient des caractères interdits (@, espaces, accents, etc.).
+    # On convertit en HTTP 400 explicite pour que l'utilisateur voie le message.
+    try:
+        username = make_unique_username(db, body.username, email, body.full_name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
     if current_user.role != "admin":
         payload = {

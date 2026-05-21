@@ -517,9 +517,16 @@ def _execute_create_user(db: Session, pa: PendingAction, reviewer: User) -> None
     if db.query(User).filter(func.lower(func.trim(User.email)) == email).first():
         raise HTTPException(409, "Un compte avec cet email existe déjà")
 
+    # make_unique_username peut lever ValueError si l'identifiant a été
+    # corrompu dans le payload entre la mise en file et l'approbation.
+    try:
+        normalized_username = make_unique_username(db, username, email, full_name)
+    except ValueError as exc:
+        raise HTTPException(400, f"Identifiant invalide dans la demande : {exc}")
+
     user = User(
         email=email,
-        username=make_unique_username(db, username, email, full_name),
+        username=normalized_username,
         hashed_password=hash_password(password),
         full_name=full_name,
         role=role,
