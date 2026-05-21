@@ -26,6 +26,11 @@ jobs:
   backup:
     runs-on: ubuntu-latest
 
+    # Opt-in immédiat à Node.js 24 pour les actions JavaScript (silence
+    # l'avertissement de dépréciation de Node.js 20).
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
     steps:
       # ─── 0. Récupère le contenu du repo (pour accéder à backup_storage.py)
       - name: Checkout du dépôt
