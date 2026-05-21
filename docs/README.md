@@ -1,53 +1,24 @@
-# 📚 Documentation Valmere & Co
+# Documents officiels — Valmere & Co
 
-Ce dossier contient les documents officiels pour les utilisateurs de la plateforme.
+Ce dossier contient les deux documents écrits qui accompagnent la plateforme. Ils sont rédigés en français, lisibles d'une traite, et destinés à des publics différents.
 
-## 📘 [GUIDE_ADMIN_DEV.md](./GUIDE_ADMIN_DEV.md)
+## Guide technique (`GUIDE_ADMIN_DEV.md`)
 
-**Destinataires** : administrateurs, équipe technique, développeurs.
+Ce document s'adresse à l'administrateur principal et à toute personne qui sera amenée à intervenir sur la plateforme. Il décrit l'architecture, les services hébergés, les rôles, le fonctionnement des opérations financières et comptables, la sécurité, le déploiement, le monitoring, les sauvegardes, les coûts, et les procédures à suivre quand quelque chose ne fonctionne pas. C'est un document de transfert : il suppose une culture informatique générale mais ne demande pas d'avoir déjà travaillé sur ce projet.
 
-Document complet sur :
-- Architecture et stack technique
-- URLs et identifiants
-- Fonctionnalités admin (transactions, distribution P&L, comptabilité)
-- Workflow d'approbation pour les caissiers
-- Sécurité (JWT, WebAuthn, CORS, audit)
-- Maintenance, déploiement, logs, backups
-- Coûts mensuels et seuils d'upgrade
-- Procédures d'urgence
+## Guide investisseur (`GUIDE_INVESTISSEUR.md`)
 
-## 🌟 [GUIDE_INVESTISSEUR.md](./GUIDE_INVESTISSEUR.md)
+Ce document est destiné à être remis à chaque nouvel investisseur **avant** son inscription sur le portail. Il lui présente la plateforme, lui explique le déroulement de l'inscription et de la première connexion, lui apprend à lire son tableau de bord, et lui donne les bonnes pratiques de sécurité. Il est rédigé dans un ton accessible, sans jargon technique inutile, et peut être imprimé tel quel ou converti en PDF pour être joint à l'email de bienvenue.
 
-**Destinataires** : nouveaux investisseurs (à transmettre **avant** leur inscription).
+## Convertir en PDF
 
-Document de bienvenue expliquant :
-- À quoi sert la plateforme
-- Comment se déroule l'inscription
-- Comment se connecter et utiliser le portail
-- Lecture du tableau de bord (capital investi, VA, P&L, ROI)
-- Gestion des transactions, rapports, paramètres
-- Sécurité et bonnes pratiques
-- Glossaire des termes financiers
+Les deux documents sont en Markdown, ce qui les rend faciles à lire directement sur GitHub. Pour les transmettre sous forme de PDF, plusieurs solutions existent :
 
----
+- Ouvrir le fichier directement sur GitHub (le rendu y est propre) et utiliser la fonction « Imprimer en PDF » du navigateur. C'est l'option la plus simple et le résultat est très lisible.
+- Utiliser un convertisseur en ligne comme `md-to-pdf.fly.dev` en copiant-collant le contenu.
+- Si VS Code est installé, l'extension « Markdown PDF » permet de générer un PDF en deux clics.
+- Pour les utilisateurs avancés, `pandoc` en ligne de commande produit un PDF avec une mise en page typographique soignée.
 
-## 📄 Conversion en PDF
+## Mise à jour
 
-Pour partager ces documents en PDF avec un investisseur :
-
-### Option 1 — Pandoc (ligne de commande)
-```bash
-pandoc GUIDE_INVESTISSEUR.md -o GUIDE_INVESTISSEUR.pdf --pdf-engine=xelatex
-```
-
-### Option 2 — VS Code
-- Installer l'extension **Markdown PDF**
-- Clic droit sur le fichier `.md` → **Markdown PDF: Export (pdf)**
-
-### Option 3 — En ligne
-- https://md-to-pdf.fly.dev
-- https://www.markdowntopdf.com
-
-### Option 4 — Print to PDF
-- Ouvrir le fichier dans GitHub (rendu Markdown joli)
-- Ctrl+P → choisir **Enregistrer en PDF**
+Quand la plateforme évolue de façon notable (changement de nom de domaine, nouvelle fonctionnalité importante, modification des règles de gestion), ces documents doivent être mis à jour en conséquence. Un document de référence qui n'est plus aligné avec la réalité est plus nuisible qu'utile.

@@ -1,501 +1,216 @@
-# 📘 Guide Administrateur & Développeur — Valmere & Co Portail Investisseur
+# Guide technique — Portail Investisseur Valmere & Co
 
-> Document interne — réservé aux administrateurs et au support technique.
-> Dernière mise à jour : mai 2026
+*Document de transfert à destination de l'administrateur principal et de toute personne qui sera amenée à maintenir la plateforme.*
 
----
-
-## Table des matières
-
-1. [Présentation de la plateforme](#1-présentation-de-la-plateforme)
-2. [Accès et URLs](#2-accès-et-urls)
-3. [Architecture technique](#3-architecture-technique)
-4. [Rôles et permissions](#4-rôles-et-permissions)
-5. [Fonctionnalités admin](#5-fonctionnalités-admin)
-6. [Workflow comptable](#6-workflow-comptable)
-7. [Distribution des P&L](#7-distribution-des-pl)
-8. [Sécurité](#8-sécurité)
-9. [Maintenance et exploitation](#9-maintenance-et-exploitation)
-10. [Coûts et limites](#10-coûts-et-limites)
-11. [Procédures d'urgence](#11-procédures-durgence)
-12. [Comptes et identifiants critiques](#12-comptes-et-identifiants-critiques)
+Ce guide n'est pas un manuel utilisateur. Il décrit ce qu'est la plateforme, comment elle a été construite, où elle vit, comment elle se comporte au quotidien, et que faire quand quelque chose tourne mal. Il est rédigé en supposant que la personne qui le lit a une culture informatique générale mais ne connaît pas encore ce projet.
 
 ---
 
-## 1. Présentation de la plateforme
+## 1. Vue d'ensemble
 
-**Valmere & Co — Portail Investisseur** est une plateforme web complète permettant à Valmere & Co de :
+Le Portail Investisseur est l'outil informatique de Valmere & Co qui sert à trois choses : tenir à jour la situation comptable de chaque investisseur, distribuer les profits et pertes périodiquement entre la société et les investisseurs, et donner à chaque investisseur un accès web personnel et sécurisé à ses propres chiffres. Tout ce qui transite par la plateforme est enregistré, daté, et conservé pour des raisons d'audit.
 
-- Suivre la valeur des investissements de chaque investisseur en temps réel
-- Enregistrer toutes les transactions (dépôts, retraits, gains, pertes, frais, renflouements)
-- Gérer la comptabilité en double-entrée (journal général, plan comptable, états financiers)
-- Distribuer les profits/pertes selon une règle 80 % société / 20 % investisseurs au prorata
-- Générer des rapports PDF signés pour chaque investisseur
-- Offrir à chaque investisseur un accès sécurisé à **ses propres données uniquement**
+Concrètement, un utilisateur peut être l'une des trois choses suivantes : un administrateur, un caissier, ou un investisseur. L'administrateur peut tout faire. Le caissier peut faire beaucoup de choses mais ses actions sensibles passent par une file d'attente avant que l'administrateur ne les valide ou les rejette. L'investisseur ne voit que ses propres données et ne peut rien modifier.
 
-La plateforme est **multilingue** (FR / EN / ES) et **multi-devise** (HTG / USD / EUR), avec des taux de change historiques figés à la date de la transaction pour préserver l'audit.
+La plateforme gère trois monnaies (gourde haïtienne, dollar américain, euro) et trois langues d'interface (français, anglais, espagnol). Une opération enregistrée en dollars un jour donné garde **pour toujours** le taux de change qui s'appliquait ce jour-là — ce qui veut dire que même si le taux du dollar change demain, les montants déjà inscrits dans le journal comptable ne bougent pas. C'est une exigence d'audit.
 
 ---
 
-## 2. Accès et URLs
+## 2. Là où la plateforme vit
 
-| Élément | URL / Accès |
+L'application accessible aux utilisateurs est servie depuis Netlify, qui distribue le frontend (l'interface visible dans le navigateur) à travers son réseau mondial. L'adresse publique est `https://valmere-co.netlify.app`. C'est l'URL que vous donnez aux investisseurs.
+
+Derrière ce frontend, il y a une API hébergée sur Render, qui s'occupe de toute la logique métier (les calculs de P&L, les écritures comptables, l'authentification, la génération des rapports). On peut y accéder directement à `https://valmere-api.onrender.com` mais il n'y a aucune raison pour un utilisateur normal de le faire. Si vous voulez voir la liste de toutes les routes disponibles, vous pouvez ajouter `/docs` à cette URL : Swagger s'affiche et liste tout.
+
+La base de données et le stockage de fichiers sont chez Supabase. C'est là que sont conservés les investisseurs, les transactions, les écritures comptables, les utilisateurs, ainsi que les logos et les PDF de rapports. Le code source de l'ensemble du projet vit sur GitHub dans le repo `Valmere/Project`, repo privé visible uniquement par les membres de l'organisation GitHub Valmere.
+
+| Élément | Adresse |
 |---|---|
-| **Application publique** | https://valmere-co.netlify.app |
-| **API backend** | https://valmere-api.onrender.com |
-| **Documentation API (Swagger)** | https://valmere-api.onrender.com/docs |
-| **Repo GitHub** | https://github.com/Valmere/Project |
-| **Dashboard Render** | https://dashboard.render.com (service : `valmere-api`) |
-| **Dashboard Netlify** | https://app.netlify.com (site : `valmere-co`) |
-| **Dashboard Supabase** | https://supabase.com (projet : `Valmere` / `igzcwqmuwuxdysqftomc`) |
-| **Monitoring (UptimeRobot)** | https://uptimerobot.com (à configurer) |
+| Application publique | https://valmere-co.netlify.app |
+| API backend | https://valmere-api.onrender.com |
+| Documentation interactive de l'API | https://valmere-api.onrender.com/docs |
+| Endpoint de santé (pour le monitoring) | https://valmere-api.onrender.com/health |
+| Code source | https://github.com/Valmere/Project |
+| Tableau de bord Render | https://dashboard.render.com (service : `valmere-api`) |
+| Tableau de bord Netlify | https://app.netlify.com (site : `valmere-co`) |
+| Tableau de bord Supabase | https://supabase.com/dashboard (projet : `Valmere`, identifiant `igzcwqmuwuxdysqftomc`) |
+| Monitoring | https://uptimerobot.com (compte : `valmere`) |
 
 ---
 
-## 3. Architecture technique
+## 3. Comment l'ensemble communique
 
-```
-┌────────────────────────────────────────────────────────────┐
-│  Frontend React + Vite + Tailwind                          │
-│  Hébergé sur Netlify (CDN mondial, HTTPS auto)             │
-│  https://valmere-co.netlify.app                            │
-└─────────────────────┬──────────────────────────────────────┘
-                      │ HTTPS (appels REST)
-                      ▼
-┌────────────────────────────────────────────────────────────┐
-│  Backend FastAPI (Python 3.11)                             │
-│  Hébergé sur Render (Free tier)                            │
-│  https://valmere-api.onrender.com                          │
-│                                                            │
-│  - SQLAlchemy + Alembic (migrations)                       │
-│  - pg8000 (driver PostgreSQL pur Python)                   │
-│  - JWT pour l'authentification                             │
-│  - WebAuthn pour la biométrie                              │
-└─────────────────────┬──────────────────────────────────────┘
-                      │ PostgreSQL via pooler
-                      ▼
-┌────────────────────────────────────────────────────────────┐
-│  Supabase                                                  │
-│   ├─ PostgreSQL 17 (base de données principale)            │
-│   ├─ Storage : 2 buckets (`logos` public, `reports` privé) │
-│   └─ Backups quotidiens automatiques                       │
-└────────────────────────────────────────────────────────────┘
-```
+Quand un investisseur tape l'adresse de l'application dans son navigateur, son téléphone ou son ordinateur va chercher le code du site sur Netlify, qui le lui envoie en quelques dizaines de millisecondes. À ce stade, l'utilisateur voit la page de connexion mais il n'a encore rien fait sur la base de données.
 
-### Stack détaillée
+Au moment où il clique sur « Se connecter », son navigateur envoie une requête vers Render. Render exécute le code Python qui consulte la base Supabase pour vérifier l'identifiant et le mot de passe. Si tout va bien, Render renvoie un jeton de session (un JWT) que le navigateur garde et qu'il utilise pour toutes les requêtes suivantes pendant huit heures.
 
-| Couche | Technologie | Version |
-|---|---|---|
-| Frontend | React 19, Vite 8, Tailwind 3 | — |
-| Backend | FastAPI, SQLAlchemy 2, Alembic | — |
-| Base de données | PostgreSQL | 17.6 |
-| Driver Python | pg8000 (pas psycopg2) | 1.31 |
-| Auth | JWT (HS256) + WebAuthn 2.7 | — |
-| Comptabilité | Double-entrée (33 comptes pré-amorcés) | — |
-| Devises | HTG, USD, EUR avec FX historique figé | — |
-| Langues | FR / EN / ES | — |
+À partir de là, chaque action dans l'application (consulter le tableau de bord, charger les transactions, télécharger un rapport) suit le même chemin : navigateur → Render → Supabase → Render → navigateur. Le frontend ne parle jamais directement à Supabase, c'est toujours Render qui sert d'intermédiaire. Cette architecture protège les données : impossible pour un investisseur, même malicieux, d'accéder aux données d'un autre investisseur, parce que Render applique systématiquement les règles de filtrage avant de renvoyer quoi que ce soit.
 
-### Déploiement continu
+Les fichiers (logos, signatures, PDF des rapports) sont une exception : ils sont servis directement par Supabase Storage, soit publiquement pour le logo de la société, soit via des liens signés temporaires pour les rapports qui ne doivent être visibles qu'au destinataire.
 
-- **Push sur `main`** → Render redéploie le backend (~3-5 min)
-- **Push sur `main`** → Netlify redéploie le frontend (~2-3 min)
+Quand vous modifiez le code et que vous le poussez sur GitHub avec un `git push`, GitHub prévient automatiquement Render et Netlify, qui reconstruisent et redéploient leurs parties respectives en quelques minutes. Vous n'avez rien d'autre à faire que le `git push`.
 
 ---
 
-## 4. Rôles et permissions
+## 4. Les trois rôles dans l'application
 
-La plateforme distingue **3 rôles** :
+L'administrateur a accès à tout. Il crée les investisseurs, modifie les transactions, lance les distributions de P&L, valide ou rejette les demandes d'approbation des caissiers, génère et publie les rapports, ajuste les paramètres de la société. Il y a au minimum un administrateur dans la plateforme, généralement deux ou trois pour assurer la continuité.
 
-| Rôle | Description | Permissions |
-|---|---|---|
-| **admin** | Gestionnaire principal | Accès total — peut TOUT faire sans approbation |
-| **cashier** | Caissier | Peut créer/modifier transactions, mais les actions sensibles passent en file d'approbation admin |
-| **investor** | Investisseur | Voit UNIQUEMENT ses propres données — pas de modification |
+Le caissier est une fonction intermédiaire pensée pour la délégation. Un caissier peut consulter les chiffres, créer des transactions courantes, gérer la messagerie. Mais dès qu'il s'agit d'une action lourde (annuler ou modifier une transaction déjà passée, supprimer un investisseur, créer un autre utilisateur, déclencher une distribution de P&L), sa demande passe en file d'attente et l'administrateur doit la valider depuis la page Approbations. Cette mécanique évite qu'une erreur humaine ou une mauvaise intention puisse modifier silencieusement les chiffres financiers.
 
-### Actions sensibles soumises à approbation pour les cashiers
+L'investisseur est le destinataire de la plateforme. Il se connecte, il regarde ses propres chiffres, il télécharge ses rapports, il écrit un message à l'équipe s'il a une question. Il ne peut rien créer, modifier ou supprimer dans les données financières.
 
-1. Suppression d'un investisseur
-2. Annulation d'une transaction
-3. Modification d'une transaction
-4. Restauration d'une transaction supprimée
-5. Replay d'une transaction
-6. Création d'un utilisateur
-7. Distribution de P&L
-
-→ Le caissier déclenche l'action, l'admin valide depuis **Admin → Approbations**.
+Sept types d'actions sont soumises à approbation lorsqu'elles sont initiées par un caissier : la suppression d'un investisseur, l'annulation d'une transaction, la modification d'une transaction existante, la restauration d'une transaction préalablement annulée, la copie d'une transaction (replay), la création d'un nouvel utilisateur, et la distribution périodique des profits et pertes.
 
 ---
 
-## 5. Fonctionnalités admin
+## 5. Comment se passent les opérations financières
 
-### 5.1 Gestion des investisseurs (`/admin/investors`)
+Toute opération financière dans Valmere & Co est représentée par une « transaction » dans la plateforme. Les transactions ont un type, qui détermine leur effet sur le portefeuille de l'investisseur et sur la comptabilité.
 
-- **Créer** un investisseur (nom, email, téléphone, date d'entrée, durée d'engagement, capital initial)
-- Si email fourni → un compte de connexion est auto-généré avec mot de passe temporaire
-- **Modifier** un investisseur
-- **Activer / Désactiver** (l'inactif est exclu des calculs, ses biens sont considérés liquides)
-- **Réactiver** avec deux modes :
-  - **Restaurer** : remet tout son historique
-  - **Repartir à zéro** : nouveau départ
-- **Supprimer** (admin seulement, cascade sur transactions/investments/reports)
+Un **dépôt** augmente le capital investi de l'investisseur. Un **retrait** le diminue. Un **gain** augmente la valeur actuelle du portefeuille sans toucher au capital investi (c'est un profit). Une **perte** fait l'inverse. Les **frais** sont comptés comme une diminution de valeur, comme une perte, mais classés à part pour la lisibilité.
 
-### 5.2 Gestion des utilisateurs (`/admin/users`)
+Le **renflouement investisseur** (`bailout`) est un cas particulier. Si à un moment donné, à la suite de pertes successives, la valeur actuelle d'un investisseur devient négative, l'administrateur peut procéder à un renflouement : il fixe une nouvelle valeur cible (par exemple zéro), et le système enregistre automatiquement le montant nécessaire pour ramener le portefeuille à cette cible. Tant que la valeur d'un investisseur reste négative, c'est le seul type d'opération que la plateforme accepte sur son compte : on ne peut pas faire un nouveau dépôt qui « cacherait » la perte, on doit d'abord renflouer.
 
-- Créer admin, caissier, ou investisseur
-- Lier un utilisateur à un investisseur (pour les comptes investor)
-- Reset mot de passe (génère un nouveau mot de passe temporaire)
-- Activer / désactiver / supprimer
+Le **renflouement société** (`company_bailout`) est l'équivalent pour le compte de la société Valmere & Co elle-même. Il augmente la balance de la société. Le **prélèvement société** (`company_withdrawal`) la diminue.
 
-### 5.3 Transactions (`/admin/transactions`)
+Chaque transaction génère automatiquement une écriture comptable en double-entrée. Si un investisseur dépose deux cents dollars un jour où le taux est de 130,48 gourdes pour un dollar, la plateforme enregistre une écriture qui débite le compte « Banque » de 26 096 gourdes et qui crédite simultanément le compte de l'investisseur du même montant. À côté, la ligne d'écriture conserve trois informations : le montant d'origine (200), la devise d'origine (USD), et le taux appliqué (130,48). Ces trois données restent inscrites pour toujours et c'est ce qui permet, des années plus tard, de comprendre comment 200 dollars se sont transformés en 26 096 gourdes ce jour-là.
 
-8 types de transactions supportés :
-
-| Type | Effet | Cible |
-|---|---|---|
-| `deposit` | +capital investi | Investisseur |
-| `withdrawal` | −capital investi | Investisseur |
-| `gain` | +valeur actuelle | Investisseur |
-| `loss` | −valeur actuelle | Investisseur |
-| `fee` | −valeur actuelle | Investisseur |
-| `bailout` | Recapitalise un investisseur à une VA cible | Investisseur |
-| `company_withdrawal` | −balance société | Société |
-| `company_bailout` | +balance société | Société |
-
-#### Workflow particulier — quand un investisseur a une VA négative
-
-→ Seul un `bailout` est autorisé tant que la VA n'est pas remise positive.
-Tous les autres types sont bloqués (côté UI et backend).
-
-#### Trash / Restore / Replay
-
-- **Trash** (poubelle) : un admin peut "supprimer" une transaction → elle bascule en `status='voided'` et tous ses effets sont reversés (solde, comptabilité)
-- **Restore** : remet la transaction en `active` et réapplique ses effets
-- **Replay** : copie la transaction en une nouvelle (pratique pour les corrections)
-
-### 5.4 Rapports (`/admin/reports`)
-
-- Génération de relevés PDF par investisseur (toutes périodes ou intervalle)
-- Programmation de publication différée
-- Signature numérique (logo + signature admin)
-- Partage par lien signé (expire après X jours)
-
-### 5.5 Approbations (`/admin/approvals`)
-
-File d'attente des actions sensibles demandées par les caissiers. L'admin :
-- Voit le détail de la demande (qui, quoi, quand, raison)
-- Peut **Approuver** (l'action est exécutée immédiatement)
-- Peut **Rejeter** (avec justification)
-
-### 5.6 Comptabilité (`/admin/accounting/*`)
-
-- **Plan comptable** (`/chart`) : 33 comptes pré-amorcés selon les normes haïtiennes
-- **Journal général** (`/journal`) : toutes les écritures comptables, posting manuel ou auto, audit FX
-- **États financiers** (`/statements`) :
-  - Balance de vérification (Trial Balance)
-  - Compte de résultat (Income Statement)
-  - Bilan (Balance Sheet)
-- Devise d'affichage configurable (HTG, USD, EUR)
-
-### 5.7 Paramètres (`/admin/settings`)
-
-- Logo entreprise (upload vers Supabase Storage)
-- Nom officiel
-- Signature admin (canvas drawing ou upload)
-- Taux de change personnalisés (`/admin/currency-rates`)
-
-### 5.8 Messagerie (`/admin/messages`)
-
-- Boîte de réception des messages envoyés par les investisseurs
-- Réponse directe
-- Broadcast email à tous les investisseurs actifs (via mailto bcc)
+Quand une transaction est supprimée (envoyée à la corbeille), elle n'est pas effacée de la base. Son statut passe à « voided » et le système enregistre automatiquement une contre-écriture qui annule les effets de l'écriture initiale. Si plus tard l'administrateur veut la restaurer, il a deux choix : la restaurer comme avant (les chiffres reviennent comme s'il n'y avait jamais eu de suppression), ou la rejouer (une nouvelle transaction identique est créée, avec ses propres écritures, et l'originale reste à la corbeille à des fins d'audit). Cette mécanique de corbeille fait que les chiffres sont toujours réversibles et traçables.
 
 ---
 
-## 6. Workflow comptable
+## 6. La distribution périodique des profits et pertes
 
-### Double-entrée automatique
+À intervalles réguliers (mensuels, trimestriels, selon la décision de la société), l'administrateur lance une distribution. C'est une opération qui répartit le résultat net de la période entre la société et les investisseurs, selon une règle convenue : 80 % pour la société, 20 % pour les investisseurs au prorata de leur valeur actuelle.
 
-Chaque transaction métier génère **automatiquement** une écriture comptable :
+L'administrateur arrive sur la page Transactions, clique sur le bouton « Distribuer P&L », et choisit la période. Le système affiche immédiatement un aperçu : combien chaque investisseur va recevoir (ou supporter, si c'est une perte). L'aperçu se met à jour en temps réel quand l'administrateur ajuste les paramètres. Tant qu'il n'a pas validé, rien n'est inscrit en base.
 
-```
-Exemple : un dépôt de 200 USD d'un investisseur (taux 130.48 USD→HTG)
+Une fois la validation faite, le système crée une transaction de type « gain » ou « loss » pour chaque investisseur concerné, plus une transaction équivalente sur le compte de la société. Toutes ces transactions sont marquées avec un identifiant de distribution commun, ce qui permet plus tard de les retrouver ensemble et de les traiter en bloc si besoin.
 
-  Journal entry #1 (date du dépôt)
-  ─────────────────────────────────────────────────
-  Compte 512 (Banque)             DÉBIT  26 096 HTG
-  Compte 419 (Compte investisseur) CRÉDIT 26 096 HTG
-  
-  + Audit FX :
-    original_amount = 200
-    original_currency = USD
-    fx_rate = 130.48 (figé à cette transaction)
-```
-
-### Taux FX historique figé
-
-Quand une transaction est postée, le taux de change utilisé est **enregistré dans la ligne d'écriture**. Si demain le taux change à 135 USD→HTG, l'historique reste à 130.48. C'est ce qui permet l'audit fiscal/légal.
-
-Un triangle d'avertissement `≈` apparaît dans le journal si la conversion a utilisé le taux courant (pas le taux historique) — typiquement pour les anciens enregistrements avant cette feature.
-
-### Statuts des écritures
-
-- `draft` : brouillon, modifiable, n'impacte pas les états financiers
-- `posted` : validée, impacte les états financiers, irrémédiable sauf void
-- `voided` : annulée (avec contre-écriture)
+Il y a deux subtilités importantes. Premièrement, lorsque la période est globalement déficitaire, un investisseur dont la valeur actuelle est déjà négative ou nulle est exclu de la répartition. La logique est que s'il a déjà perdu son capital, on ne peut pas lui imputer une perte supplémentaire (il sera renfloué séparément si nécessaire). Deuxièmement, les transactions issues d'une distribution ne peuvent pas être éditées individuellement : si on veut annuler une distribution, il faut traiter l'ensemble du groupe.
 
 ---
 
-## 7. Distribution des P&L
+## 7. La sécurité
 
-Quand l'admin clique **Distribuer P&L** depuis Transactions :
+L'authentification utilise un système de jetons de session (JWT) signés avec une clé secrète qui réside uniquement dans les variables d'environnement de Render. Cette clé n'apparaît nulle part dans le code source ni dans la base de données. Les mots de passe des utilisateurs ne sont jamais stockés en clair : ce qu'on stocke en base, c'est une empreinte cryptographique (bcrypt) qui ne permet pas de retrouver le mot de passe même si on a accès à la base. Conséquence pratique : si un utilisateur oublie son mot de passe, même l'administrateur ne peut pas le lui dire — il peut seulement en générer un nouveau temporaire.
 
-1. Le système calcule le **P&L net** sur la période (gains − pertes − frais)
-2. Si négatif → les investisseurs avec VA ≤ 0 sont **exclus** (ils ne participent pas à la perte au-delà de leur exposition)
-3. La répartition se fait :
-   - **80 %** pour la société (Valmere & Co)
-   - **20 %** pour les investisseurs **au prorata de leur VA**
-4. Aperçu en temps réel avant validation (debounce 400 ms)
-5. Validation → création automatique de N transactions de type `gain` ou `loss`, chacune marquée `distribution_id`
-6. Les transactions issues d'une distribution sont **non éditables individuellement**
+La biométrie (Touch ID sur iPhone, Windows Hello, empreinte Android) est gérée par le standard WebAuthn. Quand un utilisateur active la biométrie sur son téléphone, son appareil génère localement une paire de clés cryptographiques. Seule la clé publique est envoyée au serveur ; la clé privée ne quitte jamais l'appareil. Pour s'authentifier, l'utilisateur fait son geste biométrique, l'appareil signe un défi avec la clé privée, et le serveur vérifie la signature avec la clé publique. Aucune donnée biométrique (empreinte, image faciale) ne transite par Internet ni par notre serveur.
 
-→ Si une distribution est rejouée ou annulée, tous les enfants sont traités ensemble.
+Une particularité de WebAuthn à connaître : un enregistrement biométrique est lié au domaine sur lequel il a été créé. Si demain on déplace l'application de `valmere-co.netlify.app` vers `app.valmere.com`, tous les enregistrements biométriques précédents seront invalidés et les utilisateurs devront recommencer la procédure. Cela vaut la peine d'y penser avant tout changement de nom de domaine.
+
+Les communications entre le navigateur et le serveur sont chiffrées en HTTPS (certificat Let's Encrypt automatiquement renouvelé par Netlify et par Render). Le serveur n'accepte les requêtes que depuis le domaine de l'application (`https://valmere-co.netlify.app`) : un script tiers hébergé ailleurs ne pourrait pas se brancher sur l'API. Ce filtre s'appelle CORS et il est piloté par la variable d'environnement `CORS_ORIGINS` sur Render.
+
+Enfin, chaque action sensible (suppression, modification, restauration, distribution) est tracée dans une table d'audit qui conserve qui a fait quoi et quand. Cette table n'est jamais purgée, même quand les données métier sont supprimées par ailleurs.
 
 ---
 
-## 8. Sécurité
+## 8. Le quotidien : déployer une modification
 
-### Authentification
+Le scénario standard est le suivant. Vous modifiez quelque chose dans le code (un libellé, une couleur, un calcul), vous le testez en local sur votre machine, et quand vous êtes satisfait vous le poussez sur GitHub. Le push déclenche en cascade deux choses : Render reconstruit le backend, Netlify reconstruit le frontend. Au bout de quelques minutes, vos modifications sont visibles publiquement à `https://valmere-co.netlify.app`.
 
-- **JWT HS256** avec rotation (`SECRET_KEY` en variable d'environnement)
-- Durée de vie du token : 480 minutes (8 heures)
-- Refresh manuel via re-login
-
-### Biométrie (WebAuthn)
-
-- Compatible Touch ID (Mac/iPhone), Windows Hello, empreinte Android
-- Lié au domaine : `valmere-co.netlify.app`
-- Si le domaine change, les enregistrements existants sont invalidés (sécurité standard WebAuthn)
-
-### Mots de passe
-
-- Hashés avec **bcrypt** (rounds par défaut)
-- Force minimum non imposée côté backend — recommandation : 12+ caractères
-
-### CORS
-
-- Origine autorisée : `https://valmere-co.netlify.app` uniquement
-- Modifié via la variable d'env `CORS_ORIGINS` sur Render
-- Pour ajouter un domaine : `CORS_ORIGINS=https://valmere-co.netlify.app,https://autre-domaine.com`
-
-### Audit logs
-
-- Chaque action sensible est loggée dans la table `audit_logs`
-- Trash/restore/replay tracés avec `voided_by`, `voided_at`, `restored_by`, `restored_at`, `replayed_by`, `replayed_at`
-- Editions multiples comptabilisées via `edit_count` + `last_edit_reason`
-
----
-
-## 9. Maintenance et exploitation
-
-### Déployer une mise à jour
+En pratique, depuis le dossier du projet sur votre ordinateur, ça donne ces trois commandes :
 
 ```bash
-# 1. Cloner le repo (1ère fois seulement)
-git clone https://github.com/Valmere/Project.git
-cd Project
-
-# 2. Faire les modifications dans le code
-# 3. Commit + push
 git add .
-git commit -m "description du changement"
+git commit -m "Description courte de ce que vous avez changé"
 git push origin main
-
-# 4. Render redéploie automatiquement le backend (~3-5 min)
-# 5. Netlify redéploie automatiquement le frontend (~2-3 min)
 ```
 
-### Voir les logs
+C'est tout. Pas de FTP, pas de configuration manuelle de serveur, pas de redémarrage à faire. Si vous voulez voir où en est le déploiement, vous ouvrez les onglets « Events » de Render ou « Deploys » de Netlify, et vous verrez le statut en direct.
 
-| Plateforme | Où regarder |
-|---|---|
-| **Backend (Render)** | Dashboard Render → `valmere-api` → onglet **Logs** |
-| **Frontend (Netlify)** | Dashboard Netlify → site → onglet **Deploys** → log du build |
-| **DB (Supabase)** | Dashboard Supabase → projet → **Logs** → choisir Postgres/Auth/Storage |
-
-### Backups
-
-- **Supabase** : backups quotidiens automatiques, rétention 7 jours sur le plan gratuit
-- Pour un export manuel : `pg_dump` depuis ton PC (commande dans la procédure d'urgence)
-
-### Cold-start Render Free
-
-Le tier gratuit met le backend en pause après 15 min d'inactivité. Le 1ᵉʳ visiteur après pause attend **50 secondes**.
-
-**Solution** : UptimeRobot (gratuit) ping le backend toutes les 5 min → il ne s'endort jamais en heures ouvrables.
-
-### UptimeRobot — configuration officielle
-
-- **Compte** : `valmere` (créé via GitHub, plan Free, 50 monitors max)
-- **Dashboard** : https://uptimerobot.com
-
-#### Monitor configuré
-
-| Paramètre | Valeur |
-|---|---|
-| **Nom** | `valmere-api` |
-| **Type** | HTTP(s) |
-| **URL surveillée** | `https://valmere-api.onrender.com/health` |
-| **Méthode HTTP** | `GET` (recommandé) — pas HEAD |
-| **Intervalle** | 5 minutes |
-| **Timeout** | 30 secondes |
-| **Alertes** | Email au PDG + email admin tech |
-
-#### Endpoint dédié `/health`
-
-L'API expose `https://valmere-api.onrender.com/health` qui répond `{"status": "ok"}` sans toucher la base de données. C'est l'URL **idéale** pour le monitor (légère, rapide, ne charge pas Postgres).
-
-L'endpoint racine `/` accepte aussi GET et HEAD, donc `https://valmere-api.onrender.com/` fonctionne également.
-
-#### Si le monitor reste "Down"
-
-| Symptôme | Cause probable | Solution |
-|---|---|---|
-| Status 405 | Monitor configuré en HEAD vers ancien endpoint | Changer la méthode en `GET` ou utiliser `/health` |
-| Status 502 / 504 | Render en cold-start ou crash | Vérifier les logs Render |
-| Status 503 | Service redéploiement en cours | Attendre 5 min, ça revient |
-| Timeout | DNS / réseau / firewall | Test depuis ton navigateur d'abord |
-
-#### Alertes par email
-
-Quand le service est `Down` pendant plus de 2 cycles consécutifs (10 min), UptimeRobot envoie un email aux contacts configurés. Idem pour le retour `Up`.
-
-→ Pour ajouter / modifier les destinataires : UptimeRobot → **My Settings** → **Alert Contacts** → Add Email.
+Si le build échoue (par exemple, une erreur de syntaxe Python ou une dépendance manquante), le service tourne toujours sur l'ancienne version. Vous ne risquez pas de casser la production en poussant une erreur : la plateforme continuera de fonctionner sur le dernier déploiement réussi pendant que vous corrigez votre code et que vous repoussez.
 
 ---
 
-## 10. Coûts et limites
+## 9. Les bases de données et leurs sauvegardes
 
-### Plans gratuits actuels
+La base de données Supabase fait l'objet de sauvegardes automatiques quotidiennes, conservées sept jours sur le plan gratuit. Cela signifie que si une corruption ou une erreur humaine arrive un mardi, on a jusqu'au mardi suivant pour s'en apercevoir et restaurer une version antérieure. Au-delà de sept jours, les sauvegardes plus anciennes sont effacées par Supabase.
 
-| Service | Plan | Limite |
-|---|---|---|
-| Render | Free | 750 h/mois (suffisant si UptimeRobot ping), 512 MB RAM |
-| Netlify | Free | 100 GB bande passante/mois, builds illimités |
-| Supabase | Free | 500 MB DB, 1 GB Storage, 2 GB bande passante, 50k MAU |
-| GitHub | Free | Repos privés illimités |
-| UptimeRobot | Free | 50 monitors, ping 5 min |
+Pour des raisons de prudence, je recommande d'ajouter un deuxième niveau de sauvegarde : une fois par semaine, faire un export manuel avec `pg_dump` depuis votre ordinateur et stocker le fichier ailleurs (Google Drive, OneDrive, disque externe). Cela vous donne un filet de sécurité au cas où Supabase aurait un problème majeur, ce qui est très rare mais pas impossible.
 
-**Coût total mensuel : 0 €/$**
-
-### Quand upgrader
-
-Surveille ces seuils :
-
-| Seuil | Action recommandée |
-|---|---|
-| DB Supabase > 400 MB | Upgrader Supabase Pro (~25 $/mois) |
-| Bande passante Netlify > 80 GB/mois | Upgrader Netlify Pro (19 $/mois) ou ajouter Cloudflare CDN |
-| Cold-start trop gênant pour les utilisateurs | Upgrader Render Starter (7 $/mois) — pas de spin down |
-| Plus de 50 utilisateurs simultanés | Backend Render Standard (25 $/mois) |
-
-### Estimation à 100-200 investisseurs actifs
-
-Approximativement **25-40 $/mois** total (Render Starter + Supabase Pro).
-
----
-
-## 11. Procédures d'urgence
-
-### 🚨 La plateforme est inaccessible
-
-1. Vérifier https://valmere-api.onrender.com/ → si 502/504 = Render down ou en cold-start
-2. Vérifier https://app.netlify.com → status du dernier déploiement
-3. Vérifier https://status.supabase.com pour incident DB
-
-### 🚨 Erreur en production
-
-1. **Logs Render** (onglet Logs) → chercher le traceback Python
-2. **Sentry** (si configuré) → erreurs frontend + backend regroupées
-3. Si erreur DB → vérifier connection string et statut Supabase
-
-### 🚨 Restaurer un backup
+La commande à exécuter (avec PostgreSQL 17 installé localement) ressemble à ceci :
 
 ```bash
-# 1. Sur Supabase, créer un nouveau projet (ou utiliser un projet de staging)
-# 2. Récupérer un backup quotidien (Supabase Dashboard → Database → Backups)
-# 3. Restaurer le backup sur le nouveau projet
-# 4. Mettre à jour DATABASE_URL sur Render avec la nouvelle URL
-# 5. Redéployer
+pg_dump -h aws-1-us-west-1.pooler.supabase.com -p 5432 \
+        -U postgres.igzcwqmuwuxdysqftomc -d postgres \
+        --no-owner --no-acl > backup_$(date +%Y%m%d).sql
 ```
 
-### 🚨 Rollback d'un déploiement
-
-**Render** : Dashboard → service → onglet Events → trouver l'ancien déploiement OK → bouton **Rollback**
-
-**Netlify** : Dashboard → site → onglet Deploys → trouver l'ancien déploiement OK → **Publish deploy**
-
-### 🚨 Reset mot de passe d'un admin
-
-Connexion à un autre compte admin → Admin → Utilisateurs → cliquer **Reset mot de passe** sur la ligne concernée → un nouveau mot de passe temporaire est généré.
-
-Si **plus aucun admin n'est accessible** : connexion directe à la base via Supabase SQL Editor :
-
-```sql
-UPDATE users 
-SET password_hash = '$2b$12$EXAMPLE_HASH_HERE'  -- nouveau hash bcrypt
-WHERE email = 'admin@valmere.com';
-```
-
-(Le hash bcrypt peut être généré via Python : `import bcrypt; bcrypt.hashpw(b'mot_de_passe', bcrypt.gensalt())`)
+Le système vous demandera le mot de passe DB de Supabase. Le fichier produit fait quelques centaines de kilo-octets si la base est petite, jusqu'à quelques mégaoctets quand elle aura grossi. Pour restaurer, on utilise `psql` avec l'option `-f` sur le fichier.
 
 ---
 
-## 12. Comptes et identifiants critiques
+## 10. Le monitoring
 
-> ⚠️ **À garder dans un coffre-fort numérique** (Bitwarden, 1Password, etc.) — **JAMAIS** dans un fichier git.
+UptimeRobot surveille en continu que l'API répond. Il ping `https://valmere-api.onrender.com/health` toutes les cinq minutes. Cet endpoint est volontairement très léger (il ne consulte pas la base de données) pour ne pas surcharger le serveur. Si la réponse ne revient pas dans les trente secondes, ou si elle revient avec un code d'erreur, UptimeRobot considère le service comme « Down » et, après deux échecs consécutifs, envoie un email aux contacts configurés.
 
-### Liste des accès à transmettre au nouvel admin
+Un effet secondaire bénéfique de ce ping régulier est qu'il maintient le backend Render éveillé. Le plan gratuit de Render endort automatiquement les services après quinze minutes sans trafic, et le premier visiteur qui revient après une pause attend cinquante secondes que le service redémarre. Avec UptimeRobot qui tape toutes les cinq minutes, le service ne s'endort jamais en heures ouvrables et les utilisateurs n'ont jamais à attendre.
 
-| Service | Type | Détail |
+La configuration actuelle utilise la méthode GET (la méthode HEAD posait initialement un problème de compatibilité, désormais résolu côté code, mais GET reste préférable car plus universel). En cas d'incident, UptimeRobot vous enverra un email avec le titre du genre « Monitor is DOWN » et reprendra contact quand le service sera revenu, avec un email « Monitor is back UP » indiquant la durée de la panne.
+
+---
+
+## 11. Les coûts mensuels et les seuils de croissance
+
+À ce jour, l'ensemble de la plateforme tourne sur des plans gratuits : Render Free pour l'API, Netlify Free pour le frontend, Supabase Free pour la base de données et le stockage, UptimeRobot Free pour le monitoring, GitHub Free pour le code. Le coût mensuel est de zéro.
+
+Cette situation est confortable mais elle a des limites. Le plan gratuit Supabase plafonne à 500 mégaoctets de base de données et un gigaoctet de stockage. Au rythme des transactions, on touchera ces limites quand la plateforme aura accumulé plusieurs milliers de transactions et plusieurs centaines de rapports PDF — concrètement après six à dix-huit mois d'usage actif. À ce moment-là il faudra passer Supabase au plan Pro (vingt-cinq dollars par mois), qui multiplie les limites par cent et offre des sauvegardes plus anciennes.
+
+Le plan gratuit Render endort le service après inactivité, mais avec UptimeRobot qui le réveille toutes les cinq minutes ce n'est plus un problème en pratique. Si l'usage augmente au point que cinq cents heures par mois ne suffisent plus (le quota gratuit), il faudra passer Render au plan Starter à sept dollars par mois.
+
+Netlify et UptimeRobot resteront probablement gratuits longtemps : les limites sont très larges pour notre usage.
+
+Au total, si l'on doit prévoir un budget de croissance, on parlera de quinze à trente-cinq dollars par mois quand on dépassera les seuils. C'est un coût opérationnel parfaitement raisonnable pour une plateforme financière professionnelle.
+
+---
+
+## 12. Que faire quand ça ne marche pas
+
+Le cas le plus fréquent est que la plateforme semble inaccessible. Avant de paniquer, prenez trente secondes pour identifier où se situe le problème. Ouvrez `https://valmere-api.onrender.com/health` dans votre navigateur. Si vous voyez `{"status": "ok"}`, l'API tourne correctement et le problème est ailleurs (peut-être le frontend, peut-être votre connexion Internet). Si vous voyez une page d'erreur Render ou si le navigateur attend longtemps puis renonce, c'est que l'API est tombée ou qu'elle est en redémarrage.
+
+Dans ce dernier cas, allez dans le tableau de bord de Render, ouvrez le service `valmere-api`, et regardez l'onglet « Logs ». Les vingt à trente dernières lignes vous diront généralement ce qui s'est passé : une erreur de connexion à la base, un module Python manquant, une erreur dans le code. Les erreurs Python sont reconnaissables à leurs lignes qui finissent par un nom de fichier et un numéro de ligne, suivies du message d'erreur en bas.
+
+Si l'erreur est due à un déploiement récent qui a cassé quelque chose, vous pouvez revenir en arrière. Dans Render, onglet « Events », trouvez le dernier déploiement qui était marqué comme « Live » avant la cassure, et cliquez sur « Rollback to this deploy ». En une minute, le service revient sur l'ancienne version. Vous pourrez ensuite corriger tranquillement le code et redéployer.
+
+Sur Netlify, la procédure est équivalente : onglet « Deploys », trouvez l'ancien déploiement fonctionnel, et cliquez sur « Publish deploy ».
+
+Si l'erreur vient de la base de données, vérifiez d'abord le statut de Supabase sur `https://status.supabase.com`. Les pannes Supabase sont rares mais elles arrivent, et dans ce cas il n'y a rien à faire d'autre qu'attendre la résolution côté Supabase (généralement moins d'une heure). Vérifiez aussi que la connection string dans les variables d'environnement de Render est toujours valide : si quelqu'un a réinitialisé le mot de passe Supabase sans mettre à jour Render, l'API ne pourra plus se connecter.
+
+Pour les cas vraiment graves (corruption de données, suppression accidentelle massive), la procédure de restauration depuis une sauvegarde Supabase prend une vingtaine de minutes. Allez dans le tableau de bord Supabase, projet `Valmere`, section Database puis Backups. Choisissez une sauvegarde antérieure à l'incident et lancez une restauration. Pendant la restauration, l'application ne fonctionnera pas pour les utilisateurs, mais à la fin la base retrouvera son état au moment de la sauvegarde sélectionnée.
+
+---
+
+## 13. Les comptes et les identifiants à conserver
+
+Plusieurs comptes en ligne sont nécessaires pour administrer la plateforme. Tous ont été créés avec l'adresse email officielle de l'entreprise. Les mots de passe doivent être conservés dans un gestionnaire de mots de passe (Bitwarden, 1Password, Dashlane, ou équivalent) et **jamais** dans un fichier texte ou un email.
+
+Le compte GitHub donne accès au code source. Le compte Render gère le backend déployé. Le compte Netlify gère le frontend déployé. Le compte Supabase gère la base de données et le stockage. Le compte UptimeRobot gère le monitoring. Et bien sûr, il y a au moins un compte administrateur dans l'application elle-même, qui sert à se connecter sur `https://valmere-co.netlify.app`.
+
+| Service | Type d'accès | Identifiant utilisé |
 |---|---|---|
-| GitHub | OAuth | Organisation `Valmere`, repo `Project` (privé) |
-| Render | Email + password | Service `valmere-api` |
-| Netlify | Email + password (ou GitHub) | Site `valmere-co` |
-| Supabase | Email + password | Projet `Valmere` (ref `igzcwqmuwuxdysqftomc`) |
-| UptimeRobot | Connexion GitHub | Compte `valmere`, monitor `valmere-api` |
-| Compte admin app | Email + password | `admin@valmere.com` (à reset au 1er login) |
+| GitHub | OAuth depuis le compte personnel ou organisation | Organisation Valmere |
+| Render | Email + mot de passe | Email entreprise |
+| Netlify | OAuth via GitHub ou email | Email entreprise ou GitHub Valmere |
+| Supabase | Email + mot de passe | Email entreprise |
+| UptimeRobot | OAuth via GitHub | Via GitHub Valmere |
+| Application Valmere | Email + mot de passe d'administrateur | À choisir par l'admin |
 
-### Variables sensibles dans `Render → Environment`
-
-```
-DATABASE_URL          : connection string PostgreSQL
-DIRECT_URL            : connection string PostgreSQL (port 5432)
-SECRET_KEY            : clé JWT (64 chars random)
-SUPABASE_SERVICE_KEY  : clé service Supabase (préfixe sb_secret_)
-CORS_ORIGINS          : domaines autorisés
-WEBAUTHN_RP_ID        : domaine pour la biométrie
-WEBAUTHN_ORIGIN       : URL complète pour la biométrie
-```
-
-→ Ces variables sont visibles dans Render Environment. Pour les remplacer, modifier la valeur + Save Changes → Render redéploie automatiquement.
+Les variables d'environnement sensibles sont stockées dans Render et invisibles depuis l'extérieur. Ce sont notamment la chaîne de connexion à la base, la clé de signature des jetons de session, et la clé d'API Supabase. Pour les consulter ou les modifier, il faut se connecter à Render avec un compte autorisé.
 
 ---
 
-## 📞 Support technique
+## 14. Pour aller plus loin
 
-En cas de problème non couvert par ce guide :
+Les calculs financiers les plus délicats sont concentrés dans quelques fichiers du backend. Le calcul de la valeur actuelle d'un investisseur, du capital investi, du gain ou de la perte cumulés, vit dans `backend/app/services/portfolio_math.py`. C'est volontairement le seul endroit où ces formules sont écrites — toutes les autres pages qui affichent des chiffres passent par ce module, ce qui garantit la cohérence. Si un jour vous devez changer la définition de quelque chose (par exemple modifier la règle de répartition 80/20), c'est ici qu'il faut intervenir.
 
-- **Documentation Render** : https://render.com/docs
-- **Documentation Netlify** : https://docs.netlify.com
-- **Documentation Supabase** : https://supabase.com/docs
-- **Documentation FastAPI** : https://fastapi.tiangolo.com
+Le posting comptable automatique est dans `backend/app/services/accounting_posting.py`. C'est ce qui transforme chaque transaction métier en une paire d'écritures comptables avec leurs taux de change historiques. La logique de distribution périodique est dans `backend/app/services/distribution_service.py`. Le workflow d'approbation des actions de caissier est dans `backend/app/services/approvals_service.py`.
 
-Pour le code métier (calculs P&L, distribution, comptabilité), consulter :
-- `backend/app/services/portfolio_math.py` (source de vérité pour VA / P&L / capital investi)
-- `backend/app/services/distribution_service.py` (logique de distribution 80/20)
-- `backend/app/services/accounting_posting.py` (posting automatique en comptabilité)
-- `backend/app/services/approvals_service.py` (workflow d'approbation)
+Pour le frontend, les pages les plus complexes sont celles des transactions et des rapports. Les composants réutilisables (cartes dépliables, badges, sélecteurs) sont dans `frontend/src/components/ui/`. L'internationalisation (français, anglais, espagnol) est gérée par les trois fichiers `frontend/src/i18n/fr.js`, `en.js`, `es.js` qui contiennent toutes les traductions.
+
+Pour comprendre une fonctionnalité spécifique, le mieux est généralement de partir de l'URL de la page concernée, de chercher le composant React correspondant dans `frontend/src/pages/`, puis de remonter jusqu'à l'API Python concernée dans `backend/app/routers/`. La structure du code suit volontairement cette logique de miroir entre frontend et backend.
 
 ---
 
-*Document interne — Valmere & Co — Reproduction et diffusion réservées à l'équipe technique.*
+*Ce document est à conserver dans le repo, à côté du code. Quand quelque chose change durablement (nouvelle plateforme d'hébergement, nouveau workflow, nouvelle règle métier), il faut le mettre à jour. Un document de transfert qui n'est plus à jour est pire qu'un document absent : il fait perdre du temps en donnant de fausses certitudes.*
