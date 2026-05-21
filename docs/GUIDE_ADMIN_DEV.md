@@ -331,7 +331,45 @@ git push origin main
 
 Le tier gratuit met le backend en pause après 15 min d'inactivité. Le 1ᵉʳ visiteur après pause attend **50 secondes**.
 
-**Solution** : configurer UptimeRobot (gratuit) pour ping `https://valmere-api.onrender.com/` toutes les 5 min → le backend ne s'endort jamais en heures ouvrables.
+**Solution** : UptimeRobot (gratuit) ping le backend toutes les 5 min → il ne s'endort jamais en heures ouvrables.
+
+### UptimeRobot — configuration officielle
+
+- **Compte** : `valmere` (créé via GitHub, plan Free, 50 monitors max)
+- **Dashboard** : https://uptimerobot.com
+
+#### Monitor configuré
+
+| Paramètre | Valeur |
+|---|---|
+| **Nom** | `valmere-api` |
+| **Type** | HTTP(s) |
+| **URL surveillée** | `https://valmere-api.onrender.com/health` |
+| **Méthode HTTP** | `GET` (recommandé) — pas HEAD |
+| **Intervalle** | 5 minutes |
+| **Timeout** | 30 secondes |
+| **Alertes** | Email au PDG + email admin tech |
+
+#### Endpoint dédié `/health`
+
+L'API expose `https://valmere-api.onrender.com/health` qui répond `{"status": "ok"}` sans toucher la base de données. C'est l'URL **idéale** pour le monitor (légère, rapide, ne charge pas Postgres).
+
+L'endpoint racine `/` accepte aussi GET et HEAD, donc `https://valmere-api.onrender.com/` fonctionne également.
+
+#### Si le monitor reste "Down"
+
+| Symptôme | Cause probable | Solution |
+|---|---|---|
+| Status 405 | Monitor configuré en HEAD vers ancien endpoint | Changer la méthode en `GET` ou utiliser `/health` |
+| Status 502 / 504 | Render en cold-start ou crash | Vérifier les logs Render |
+| Status 503 | Service redéploiement en cours | Attendre 5 min, ça revient |
+| Timeout | DNS / réseau / firewall | Test depuis ton navigateur d'abord |
+
+#### Alertes par email
+
+Quand le service est `Down` pendant plus de 2 cycles consécutifs (10 min), UptimeRobot envoie un email aux contacts configurés. Idem pour le retour `Up`.
+
+→ Pour ajouter / modifier les destinataires : UptimeRobot → **My Settings** → **Alert Contacts** → Add Email.
 
 ---
 
@@ -420,11 +458,11 @@ WHERE email = 'admin@valmere.com';
 
 | Service | Type | Détail |
 |---|---|---|
-| GitHub | OAuth | Compte `Valmere` |
-| Render | Email + password | `email@entreprise.com` |
-| Netlify | Email + password (ou GitHub) | `email@entreprise.com` |
-| Supabase | Email + password | `email@entreprise.com` |
-| UptimeRobot | Email + password | `email@entreprise.com` |
+| GitHub | OAuth | Organisation `Valmere`, repo `Project` (privé) |
+| Render | Email + password | Service `valmere-api` |
+| Netlify | Email + password (ou GitHub) | Site `valmere-co` |
+| Supabase | Email + password | Projet `Valmere` (ref `igzcwqmuwuxdysqftomc`) |
+| UptimeRobot | Connexion GitHub | Compte `valmere`, monitor `valmere-api` |
 | Compte admin app | Email + password | `admin@valmere.com` (à reset au 1er login) |
 
 ### Variables sensibles dans `Render → Environment`
