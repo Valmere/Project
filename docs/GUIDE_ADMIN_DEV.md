@@ -126,19 +126,17 @@ Si le build échoue (par exemple, une erreur de syntaxe Python ou une dépendanc
 
 ## 9. Les bases de données et leurs sauvegardes
 
-La base de données Supabase fait l'objet de sauvegardes automatiques quotidiennes, conservées sept jours sur le plan gratuit. Cela signifie que si une corruption ou une erreur humaine arrive un mardi, on a jusqu'au mardi suivant pour s'en apercevoir et restaurer une version antérieure. Au-delà de sept jours, les sauvegardes plus anciennes sont effacées par Supabase.
+La base de données Supabase fait l'objet de sauvegardes automatiques quotidiennes côté Supabase, conservées sept jours sur le plan gratuit. Cela signifie que si une corruption ou une erreur humaine arrive un mardi, on a jusqu'au mardi suivant pour s'en apercevoir et restaurer une version antérieure depuis l'interface Supabase. Au-delà de sept jours, ces sauvegardes plus anciennes sont effacées par Supabase.
 
-Pour des raisons de prudence, je recommande d'ajouter un deuxième niveau de sauvegarde : une fois par semaine, faire un export manuel avec `pg_dump` depuis votre ordinateur et stocker le fichier ailleurs (Google Drive, OneDrive, disque externe). Cela vous donne un filet de sécurité au cas où Supabase aurait un problème majeur, ce qui est très rare mais pas impossible.
+Pour disposer d'un deuxième niveau de sauvegarde indépendant de Supabase et conserver un historique plus long, la plateforme dispose d'un système d'export automatique hébergé dans GitHub Actions. Le workflow est défini dans `.github/workflows/backup.yml` et il s'exécute entièrement sur les serveurs de GitHub, sans dépendre d'aucune machine physique. Concrètement, GitHub Actions se charge tous les jours d'exécuter `pg_dump` contre la base Supabase, de télécharger les fichiers du Storage (logos, signatures, PDF de rapports), de compresser le tout dans une archive ZIP horodatée, et de la stocker dans GitHub où elle est consultable depuis l'onglet Actions du dépôt.
 
-La commande à exécuter (avec PostgreSQL 17 installé localement) ressemble à ceci :
+Trois fréquences cohabitent. La sauvegarde quotidienne tourne tous les jours à 03h00 UTC (soit environ 22h00 heure d'Haïti) et est conservée pendant 90 jours dans les artifacts GitHub. La sauvegarde hebdomadaire tourne tous les lundis et obéit aux mêmes règles de rétention. La sauvegarde mensuelle, qui tourne le premier de chaque mois, est en plus publiée comme **GitHub Release** permanente : ces Releases ne sont jamais supprimées et constituent l'archive longue de l'entreprise.
 
-```bash
-pg_dump -h aws-1-us-west-1.pooler.supabase.com -p 5432 \
-        -U postgres.igzcwqmuwuxdysqftomc -d postgres \
-        --no-owner --no-acl > backup_$(date +%Y%m%d).sql
-```
+Pour récupérer une sauvegarde, ouvrez le dépôt sur GitHub, allez dans l'onglet **Actions**, sélectionnez le workflow « Sauvegarde Valmere », choisissez l'exécution qui vous intéresse dans la liste, et téléchargez l'artifact ZIP attaché. Pour les sauvegardes mensuelles, vous pouvez aussi passer par l'onglet **Releases** du dépôt qui les liste explicitement.
 
-Le système vous demandera le mot de passe DB de Supabase. Le fichier produit fait quelques centaines de kilo-octets si la base est petite, jusqu'à quelques mégaoctets quand elle aura grossi. Pour restaurer, on utilise `psql` avec l'option `-f` sur le fichier.
+Pour déclencher une sauvegarde immédiatement (par exemple avant une opération risquée), allez dans l'onglet Actions, ouvrez le workflow « Sauvegarde Valmere », cliquez sur **Run workflow** en haut à droite, choisissez le mode (daily, weekly ou monthly), et lancez. La sauvegarde se termine en deux à trois minutes et apparaît immédiatement dans la liste des artifacts.
+
+La configuration de ce système nécessite que six secrets soient définis dans les paramètres GitHub du dépôt (Settings → Secrets and variables → Actions) : `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, et accessoirement le nom des buckets. Ces secrets sont chiffrés par GitHub et invisibles dans les logs. Si vous changez le mot de passe de la base Supabase, n'oubliez pas de mettre à jour le secret `DB_PASSWORD` correspondant, sinon les sauvegardes commenceront à échouer silencieusement (GitHub envoie un email d'alerte au propriétaire du dépôt en cas d'échec d'un workflow planifié).
 
 ---
 

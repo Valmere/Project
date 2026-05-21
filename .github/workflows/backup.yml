@@ -1,0 +1,121 @@
+name: Sauvegarde Valmere
+
+on:
+  schedule:
+    # Sauvegarde quotidienne : tous les jours à 03h00 UTC (≈ 22h00 heure d'Haïti)
+    - cron: '0 3 * * *'
+    # Sauvegarde hebdomadaire : chaque lundi à 03h30 UTC
+    - cron: '30 3 * * 1'
+    # Archive mensuelle : le 1er de chaque mois à 04h00 UTC (permanente)
+    - cron: '0 4 1 * *'
+
+  # Déclenchement manuel depuis l'onglet Actions de GitHub
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Mode de sauvegarde'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - weekly
+          - monthly
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ─── 1. Détermine le mode (daily / weekly / monthly) ─────────────
+      - name: Détermine le mode de sauvegarde
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 4 1 * *" ]; then
+            echo "value=monthly" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "30 3 * * 1" ]; then
+            echo "value=weekly" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=daily" >> "$GITHUB_OUTPUT"
+          fi
+          echo "BACKUP_DATE=$(date -u +%Y-%m-%d_%H%M%S)" >> "$GITHUB_ENV"
+
+      # ─── 2. Installation de PostgreSQL 17 (pour pg_dump compatible) ──
+      - name: Installation de pg_dump 17
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates
+          install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          sudo sh -c "echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main' > /etc/apt/sources.list.d/pgdg.list"
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          pg_dump --version
+
+      # ─── 3. Export de la base de données PostgreSQL ──────────────────
+      - name: Export PostgreSQL
+        env:
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          mkdir -p backup/storage
+          pg_dump \
+            -h "${{ secrets.DB_HOST }}" \
+            -p 5432 \
+            -U "${{ secrets.DB_USER }}" \
+            -d postgres \
+            -n public --no-owner --no-acl --clean --if-exists \
+            -f "backup/valmere_db_${BACKUP_DATE}.sql"
+          ls -lh backup/
+
+      # ─── 4. Téléchargement des fichiers Supabase Storage ─────────────
+      - name: Téléchargement Supabase Storage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python3 .github/workflows/backup_storage.py
+
+      # ─── 5. Création du fichier d'info + ZIP final ───────────────────
+      - name: Création de l'archive ZIP
+        run: |
+          cat > backup/backup_info.txt <<EOF
+          Sauvegarde ${{ steps.mode.outputs.value }} Valmere & Co
+          Date    : $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          Trigger : ${{ github.event_name }}
+          Run ID  : ${{ github.run_id }}
+          EOF
+          ARCHIVE_NAME="valmere_${{ steps.mode.outputs.value }}_${BACKUP_DATE}.zip"
+          (cd backup && zip -r "../${ARCHIVE_NAME}" .)
+          echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> "$GITHUB_ENV"
+          ls -lh "${ARCHIVE_NAME}"
+
+      # ─── 6. Upload comme artifact GitHub (90 jours de rétention) ─────
+      - name: Upload artifact (daily/weekly/monthly)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARCHIVE_NAME }}
+          path: ${{ env.ARCHIVE_NAME }}
+          retention-days: 90
+
+      # ─── 7. Si mensuel : pousse aussi vers une GitHub Release ────────
+      #     (la Release est permanente, contrairement à l'artifact)
+      - name: Création d'une Release mensuelle permanente
+        if: steps.mode.outputs.value == 'monthly'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: backup-${{ env.BACKUP_DATE }}
+          name: "Archive mensuelle ${{ env.BACKUP_DATE }}"
+          body: |
+            Sauvegarde mensuelle de la plateforme Valmere & Co.
+
+            Contenu :
+            - Base de données PostgreSQL (schema public, toutes tables et données)
+            - Fichiers Supabase Storage (buckets `logos` et `reports`)
+
+            Pour restaurer, voir `docs/GUIDE_ADMIN_DEV.md` section « Que faire quand ça ne marche pas ».
+          files: ${{ env.ARCHIVE_NAME }}
+          draft: false
+          prerelease: false
