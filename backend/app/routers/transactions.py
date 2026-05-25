@@ -127,7 +127,22 @@ def create_transaction(
     target_investor = db.query(Investor).filter(Investor.id == investment.investor_id).first()
     is_company = bool(target_investor and target_investor.is_company)
     inv_currency = getattr(investment, "currency", None) or "HTG"
-    current_balance = float(investment.current_value or 0)
+
+    # Valeur recalculée depuis les transactions — identique à ce qu'affiche
+    # le dashboard, pas investment.current_value qui peut dériver sur les
+    # conversions multi-devises.
+    _active_txs = (
+        db.query(Transaction)
+        .filter(Transaction.investment_id == investment.id, Transaction.status == "active")
+        .all()
+    )
+    _totals = portfolio_totals_by_investor(
+        [investment], _active_txs, RateCache(db), inv_currency
+    )
+    current_balance = _totals["current_by_investment"].get(
+        investment.id, float(investment.current_value or 0)
+    )
+
     display_amount = None
     display_currency = None
     bailout_target_in_inv = None
