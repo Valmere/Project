@@ -155,28 +155,30 @@ def create_transaction(
                 400,
                 "Le prélèvement n'est autorisé que sur le compte société Valmere & Co.",
             )
+        req_ccy = (body.currency or inv_currency).upper()
         try:
-            amt_in_inv = convert_amount(db, body.amount, body.currency, inv_currency)
+            available_in_req = convert_amount(db, current_balance, inv_currency, req_ccy)
         except MissingRateError as e:
             raise HTTPException(422, str(e))
-        if current_balance < amt_in_inv:
+        if available_in_req < body.amount:
             raise HTTPException(
                 400,
-                f"Solde société insuffisant. Disponible : {current_balance:.2f} {inv_currency}, "
-                f"demandé : {amt_in_inv:.2f} {inv_currency}.",
+                f"Solde société insuffisant. Disponible : {available_in_req:.2f} {req_ccy}, "
+                f"demandé : {body.amount:.2f} {req_ccy}.",
             )
 
     # Retrait investisseur : on refuse si le montant dépasse le solde disponible.
     if body.type == "withdrawal":
+        req_ccy = (body.currency or inv_currency).upper()
         try:
-            amt_in_inv = convert_amount(db, body.amount, body.currency, inv_currency)
+            available_in_req = convert_amount(db, current_balance, inv_currency, req_ccy)
         except MissingRateError as e:
             raise HTTPException(422, str(e))
-        if current_balance < amt_in_inv:
+        if available_in_req < body.amount:
             raise HTTPException(
                 400,
-                f"Solde insuffisant. Disponible : {current_balance:.2f} {inv_currency}, "
-                f"demandé : {amt_in_inv:.2f} {inv_currency}.",
+                f"Solde insuffisant. Disponible : {available_in_req:.2f} {req_ccy}, "
+                f"demandé : {body.amount:.2f} {req_ccy}.",
             )
 
     # ─── Reset de valeur actuelle (bailout) ───────────────────────────
