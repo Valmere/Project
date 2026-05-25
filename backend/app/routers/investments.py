@@ -119,7 +119,8 @@ def get_investment(
         raise HTTPException(404, "Investissement introuvable")
     if current_user.role == "investor" and str(inv.investor_id) != str(current_user.investor_id):
         raise HTTPException(403, "Accès refusé")
-    return inv
+    recalc = _recalc_current_values([inv], db)
+    return _serialize(inv, recalc.get(inv.id, float(inv.current_value or 0)))
 
 
 @router.post("", status_code=201)
