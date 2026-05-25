@@ -1,4 +1,5 @@
 import uuid
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -7,8 +8,11 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.models.investment import Investment
 from app.models.investor import Investor
+from app.models.transaction import Transaction
 from app.models.user import User
 from app.dependencies.auth import get_current_user, admin_or_cashier, admin_only
+from app.services.portfolio_math import portfolio_totals_by_investor
+from app.services.currency import RateCache
 
 router = APIRouter(prefix="/api/investments", tags=["investments"])
 
@@ -31,6 +35,48 @@ class InvestmentUpdate(BaseModel):
     notes: str | None = None
 
 
+def _recalc_current_values(investments: list[Investment], db: Session) -> dict:
+    """Retourne {investment.id: current_value recalculé depuis les transactions}."""
+    if not investments:
+        return {}
+    inv_ids = {inv.id for inv in investments}
+    txs = (
+        db.query(Transaction)
+        .filter(Transaction.investment_id.in_(inv_ids), Transaction.status == "active")
+        .all()
+    )
+    rates = RateCache(db)
+    by_currency: dict[str, list] = defaultdict(list)
+    for inv in investments:
+        by_currency[(getattr(inv, "currency", None) or "HTG").upper()].append(inv)
+    recalc: dict = {}
+    for ccy, group in by_currency.items():
+        group_ids = {inv.id for inv in group}
+        group_txs = [tx for tx in txs if tx.investment_id in group_ids]
+        totals = portfolio_totals_by_investor(group, group_txs, rates, ccy)
+        for inv in group:
+            recalc[inv.id] = totals["current_by_investment"].get(inv.id, float(inv.current_value or 0))
+    return recalc
+
+
+def _serialize(inv: Investment, current_value: float) -> dict:
+    return {
+        "id": str(inv.id),
+        "investor_id": str(inv.investor_id),
+        "name": inv.name,
+        "currency": inv.currency,
+        "initial_capital": float(inv.initial_capital or 0),
+        "current_value": round(current_value, 4),
+        "start_date": inv.start_date.isoformat() if inv.start_date else None,
+        "end_date": inv.end_date.isoformat() if inv.end_date else None,
+        "status": inv.status,
+        "notes": inv.notes,
+        "created_at": inv.created_at.isoformat() if inv.created_at else None,
+        "updated_at": inv.updated_at.isoformat() if inv.updated_at else None,
+        "created_by": str(inv.created_by) if inv.created_by else None,
+    }
+
+
 @router.get("")
 def list_investments(
     investor_id: uuid.UUID | None = None,
@@ -40,7 +86,9 @@ def list_investments(
     q = db.query(Investment)
     if investor_id:
         q = q.filter(Investment.investor_id == investor_id)
-    return q.order_by(Investment.created_at.desc()).all()
+    investments = q.order_by(Investment.created_at.desc()).all()
+    recalc = _recalc_current_values(investments, db)
+    return [_serialize(inv, recalc.get(inv.id, float(inv.current_value or 0))) for inv in investments]
 
 
 @router.get("/my")
@@ -50,12 +98,14 @@ def my_investments(
 ):
     if not current_user.investor_id:
         return []
-    return (
+    investments = (
         db.query(Investment)
         .filter(Investment.investor_id == current_user.investor_id)
         .order_by(Investment.created_at.desc())
         .all()
     )
+    recalc = _recalc_current_values(investments, db)
+    return [_serialize(inv, recalc.get(inv.id, float(inv.current_value or 0))) for inv in investments]
 
 
 @router.get("/{inv_id}")
