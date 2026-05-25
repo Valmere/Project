@@ -166,6 +166,19 @@ def create_transaction(
                 f"demandé : {amt_in_inv:.2f} {inv_currency}.",
             )
 
+    # Retrait investisseur : on refuse si le montant dépasse le solde disponible.
+    if body.type == "withdrawal":
+        try:
+            amt_in_inv = convert_amount(db, body.amount, body.currency, inv_currency)
+        except MissingRateError as e:
+            raise HTTPException(422, str(e))
+        if current_balance < amt_in_inv:
+            raise HTTPException(
+                400,
+                f"Solde insuffisant. Disponible : {current_balance:.2f} {inv_currency}, "
+                f"demandé : {amt_in_inv:.2f} {inv_currency}.",
+            )
+
     # ─── Reset de valeur actuelle (bailout) ───────────────────────────
     # L'utilisateur saisit la NOUVELLE valeur actuelle souhaitée (le target).
     # Le backend calcule en interne le delta à ajouter pour atteindre cette
