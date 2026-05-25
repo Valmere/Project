@@ -313,6 +313,14 @@ def _execute_delete_investor(db: Session, pa: PendingAction, reviewer: User) -> 
             "Il est requis pour la distribution des bénéfices/pertes.",
         )
     # Supprime d'abord les dépendances (investments, transactions, reports, user lié)
+    from app.models.report import Report
+    from app.models.journal_entry import JournalLine
+    # JournalLine.investor_id et Report.investor_id ont des FK sans CASCADE vers
+    # investors — on doit les nettoyer avant de supprimer l'investisseur.
+    db.query(JournalLine).filter(JournalLine.investor_id == inv.id).update(
+        {"investor_id": None}, synchronize_session=False
+    )
+    db.query(Report).filter(Report.investor_id == inv.id).delete(synchronize_session=False)
     db.query(Transaction).filter(Transaction.investor_id == inv.id).delete(synchronize_session=False)
     db.query(Investment).filter(Investment.investor_id == inv.id).delete(synchronize_session=False)
     # User lié : on déconnecte plutôt que de supprimer (préserve l'audit).

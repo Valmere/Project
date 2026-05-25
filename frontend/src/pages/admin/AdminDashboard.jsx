@@ -206,16 +206,16 @@ export default function AdminDashboard() {
           <>
             <StatCard
               title={investorId ? t('kpi.investor') : t('kpi.active_investors')}
-              value={investorId ? (investors.find(i => i.id === investorId)?.full_name || '—') : formatNumber(data.total_investors, lang)}
+              value={investorId ? (investors.find(i => i.id === investorId)?.full_name || '—') : formatNumber(data?.total_investors ?? 0, lang)}
               color="primary"
               variant="neutral"
             />
             <StatCard title={t('kpi.aum')} value={formatMoney(displayAum, { currency, lang })} color="secondary" variant="featured" />
             <StatCard
               title={t('kpi.global_roi')}
-              value={<RoiValue value={data.global_roi_pct} unavailable={data.roi_unavailable} lang={lang} />}
-              color="red"
-              variant="risk"
+              value={<RoiValue value={data?.global_roi_pct} unavailable={data?.roi_unavailable} lang={lang} />}
+              color={data?.roi_unavailable ? 'red' : ((data?.global_roi_pct ?? 0) >= 0 ? 'green' : 'red')}
+              variant={data?.roi_unavailable || (data?.global_roi_pct ?? 0) < 0 ? 'risk' : 'neutral'}
             />
             <PnlCard
               label={t('kpi.pnl_period', { period: periodLabel })}
@@ -247,7 +247,7 @@ export default function AdminDashboard() {
           {loading ? (
             <div className="skeleton h-48 sm:h-56 w-full rounded-lg" />
           ) : (
-            data.chart_data?.length > 0
+            data?.chart_data?.length > 0
               ? <ROILineChart data={data.chart_data} />
               : <EmptyChart t={t} />
           )}

@@ -240,7 +240,7 @@ def create_transaction(
     if body.type == "bailout" and bailout_target_in_inv is not None:
         investment.current_value = round(float(bailout_target_in_inv), 4)
     else:
-        new_value = apply_transaction_to_value(float(investment.current_value), body.type, amount_in_inv_ccy)
+        new_value = apply_transaction_to_value(float(investment.current_value or 0), body.type, amount_in_inv_ccy)
         investment.current_value = new_value
 
     # Source de verite finale : capital investi + P&L depuis les transactions

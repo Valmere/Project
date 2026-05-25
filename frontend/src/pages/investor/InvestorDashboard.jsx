@@ -183,9 +183,9 @@ export default function InvestorDashboard() {
             />
             <StatCard
               title={t('kpi.roi')}
-              value={<RoiValue value={roiPct} unavailable={data.roi_unavailable} lang={lang} />}
-              color={data.roi_unavailable ? 'red' : (roiPct >= 0 ? 'green' : 'red')}
-              variant={data.roi_unavailable || roiPct < 0 ? 'risk' : 'neutral'}
+              value={<RoiValue value={roiPct} unavailable={data?.roi_unavailable} lang={lang} />}
+              color={data?.roi_unavailable ? 'red' : (roiPct >= 0 ? 'green' : 'red')}
+              variant={data?.roi_unavailable || roiPct < 0 ? 'risk' : 'neutral'}
             />
           </>
         )}
@@ -207,7 +207,7 @@ export default function InvestorDashboard() {
           </div>
           {loading
             ? <div className="skeleton h-44 w-full rounded-lg" />
-            : (data.chart_data?.length > 0 ? <ROILineChart data={data.chart_data} /> : <EmptyChart t={t} />)
+            : (data?.chart_data?.length > 0 ? <ROILineChart data={data.chart_data} /> : <EmptyChart t={t} />)
           }
         </div>
 

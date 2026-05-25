@@ -350,7 +350,7 @@ def execute_distribution(
     db.add(company_tx)
     transactions_to_post = [company_tx]
     company_investment.current_value = apply_transaction_to_value(
-        float(company_investment.current_value), kind, company_amount_in_inv_ccy
+        float(company_investment.current_value or 0), kind, company_amount_in_inv_ccy
     )
 
     # 2) Transactions investisseurs
@@ -391,7 +391,7 @@ def execute_distribution(
         db.add(tx)
         transactions_to_post.append(tx)
         investment.current_value = apply_transaction_to_value(
-            float(investment.current_value), kind, line_in_inv_ccy
+            float(investment.current_value or 0), kind, line_in_inv_ccy
         )
         created_lines.append({
             "investor_id": str(investor_id),
